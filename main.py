@@ -36,14 +36,14 @@ status_map = {
 }
 
 async def get_prefix(bot, message):
-    # Default prefix
+    # Fallback prefix if all else fails
     default_prefix = "-"
 
-    # If DM channel, return default prefix
+    # DMs just use the default prefix
     if message.guild is None:
         return default_prefix
 
-    # Get prefix from database
+    # Let's check if this server has a custom prefix
     async with aiosqlite.connect("database.db") as db:
         async with db.execute(
             "SELECT preferences FROM servers WHERE server_id = ?",
@@ -58,30 +58,31 @@ async def get_prefix(bot, message):
                 preferences = json.loads(data[0])
                 return preferences.get("prefix", default_prefix)
             except (json.JSONDecodeError, TypeError):
+                # Something went wrong with the JSON, just use default
                 return default_prefix
 
-# Function to update bot's activity with current server count
+# Update the bot's status to show how many servers we're in
 async def update_activity(bot_instance):
     server_count = len(bot_instance.guilds)
     activity = discord.Streaming(
         name=f"Protecting {server_count} Servers",
-        url="https://www.twitch.tv/discord"  # Required for streaming status
+        url="https://www.twitch.tv/discord"  # Twitch URL needed for streaming status to work
     )
     await bot_instance.change_presence(activity=activity)
 
-# Task to update guild count every 30 seconds
+# Update our server count every half minute
 @tasks.loop(seconds=30)
 async def update_guild_count():
     await update_activity(bot)
 
-# Wait until the bot is ready before starting the task
+# Don't start the task until the bot is good to go
 @update_guild_count.before_loop
 async def before_update_guild_count():
     await bot.wait_until_ready()
 
 bot = ezcord.BridgeBot(
     intents=intents,
-    status=discord.Status.online,  # Initial status, will be updated with streaming activity
+    status=discord.Status.online,  # Start with online, we'll switch to streaming later
     command_prefix=get_prefix,
     help_command=None,
     ready_event=None,
@@ -127,26 +128,24 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_guild_join(guild):
-    """Event handler for when the bot joins a new guild.
-    Updates the bot's activity with the new server count."""
-    # Update bot activity with new server count
+    """Bot joined a new server! Update our server count."""
+    # Gotta keep that status message up-to-date
     await update_activity(bot)
     print(f"Bot joined {guild.name} (ID: {guild.id}). Updated server count in activity.")
 
 @bot.event
 async def on_guild_remove(guild):
-    """Event handler for when the bot is removed from a guild.
-    Removes all data for that guild from the database and updates the bot's activity."""
+    """Oof, we got kicked from a server. Clean up their data and update our count."""
     async with aiosqlite.connect("database.db") as db:
-        # Remove server from servers table
+        # Wipe this server from our database
         await db.execute("DELETE FROM servers WHERE server_id = ?", (guild.id,))
 
-        # Remove any bans associated with this server
+        # Also remove any bans they issued
         await db.execute("DELETE FROM bans WHERE origin_server_id = ?", (guild.id,))
 
         await db.commit()
 
-    # Update bot activity with new server count
+    # Fix our status with the new server count
     await update_activity(bot)
 
     print(f"Bot was removed from {guild.name} (ID: {guild.id}). All data for this server has been removed.")
@@ -213,8 +212,7 @@ def count_lines(base, files, dirs):
 
 @bot.event
 async def on_close():
-    """Event handler for when the bot is closing.
-    Cancels any running tasks to ensure clean shutdown."""
+    """Time to shut down - make sure we clean up our tasks first!"""
     if update_guild_count.is_running():
         update_guild_count.cancel()
     print("Bot is shutting down. Tasks have been cancelled.")

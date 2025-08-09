@@ -9,41 +9,46 @@ import discord
 from discord.ext import commands, tasks
 
 class BanRateLimit:
+    """Prevents servers from spamming ban alerts"""
+
     def __init__(self, max_bans: int = 5, time_window: int = 180):
-        self.max_bans = max_bans  # Maximum bans per time window
-        self.time_window = time_window  # Time window in seconds
-        self.server_bans: Dict[int, List[float]] = {}  # server_id -> list of ban timestamps
+        self.max_bans = max_bans  # Max bans allowed in the time period
+        self.time_window = time_window  # Time window in seconds (3 minutes default)
+        self.server_bans: Dict[int, List[float]] = {}  # Tracks when each server sent ban alerts
 
     def can_send_alert(self, server_id: int) -> bool:
-        """Check if a server can send another ban alert based on rate limits"""
+        """Checks if a server is rate-limited or can send another ban alert"""
         current_time = time.time()
 
-        # Initialize if server not in dict
+        # First time seeing this server? Initialize it
         if server_id not in self.server_bans:
             self.server_bans[server_id] = []
 
-        # Remove timestamps older than the time window
+        # Clean up old timestamps - only keep recent ones
         self.server_bans[server_id] = [
             ts for ts in self.server_bans[server_id] 
             if current_time - ts < self.time_window
         ]
 
-        # Check if under the limit
+        # If they haven't hit the limit yet, let them send another
         if len(self.server_bans[server_id]) < self.max_bans:
             self.server_bans[server_id].append(current_time)
             return True
 
+        # Too many bans, they need to wait
         return False
 
 class BanAlertView(discord.ui.View):
+    """The UI with Accept/Dismiss buttons for ban alerts"""
+
     def __init__(self, ban_id: int, user_id: int, origin_server_id: int, ban_reason: str, cog):
-        super().__init__(timeout=86400)  # 24 hours timeout
+        super().__init__(timeout=86400)  # Buttons expire after 24 hours
         self.ban_id = ban_id
-        self.user_id = user_id
-        self.origin_server_id = origin_server_id
+        self.user_id = user_id  # The banned user
+        self.origin_server_id = origin_server_id  # Server that issued the ban
         self.ban_reason = ban_reason
         self.cog = cog
-        self.expiry_time = datetime.now() + timedelta(hours=24)
+        self.expiry_time = datetime.now() + timedelta(hours=24)  # For tracking when buttons should disable
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.green, emoji="✅", custom_id="accept_ban")
     async def accept_button(self, button: discord.ui.Button, interaction: discord.Interaction):

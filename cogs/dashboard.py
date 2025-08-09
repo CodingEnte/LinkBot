@@ -9,7 +9,7 @@ from ezcord.internal.dc import slash_command
 
 
 class Dashboard(commands.Cog):
-    """Cog for server dashboard functionality"""
+    """The server settings dashboard (admin only)"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -20,7 +20,8 @@ class Dashboard(commands.Cog):
     @commands.guild_only()
     @discord.default_permissions(administrator=True)
     async def dashboard(self, ctx):
-        # Get current server settings
+        """Opens the server settings dashboard for adminis"""
+        # Grab the server's current settings
         async with aiosqlite.connect("database.db") as db:
             async with db.execute(
                 "SELECT preferences FROM servers WHERE server_id = ?",
@@ -29,7 +30,7 @@ class Dashboard(commands.Cog):
                 data = await cursor.fetchone()
 
                 if not data:
-                    # If server doesn't exist in DB, show error
+                    # Oops, looks like they haven't run setup yet
                     await ctx.respond(
                         embed=discord.Embed(
                             title="Server Not Set Up",
@@ -43,16 +44,17 @@ class Dashboard(commands.Cog):
                 try:
                     preferences = json.loads(data[0])
                 except (json.JSONDecodeError, TypeError):
+                    # JSON broke? Just use empty settings
                     preferences = {}
 
-        # Create dashboard embed
+        # Build a nice looking dashboard
         embed = discord.Embed(
             title="Server Dashboard",
             description="Manage your server settings using the buttons below.",
             color=discord.Color.blue()
         )
 
-        # Add current settings to embed
+        # Show all their current settings
         embed.add_field(
             name="Alert Channel", 
             value=f"<#{preferences.get('alert_channel_id')}>" if preferences.get('alert_channel_id') else "Not set",
@@ -77,7 +79,7 @@ class Dashboard(commands.Cog):
             inline=False
         )
 
-        # Send dashboard with view
+        # Show the dashboard only to the person who ran the command
         await ctx.respond(
             embed=embed,
             view=DashboardView(self.bot, ctx.guild.id, preferences),
@@ -86,26 +88,26 @@ class Dashboard(commands.Cog):
 
 
 class DashboardView(discord.ui.View):
-    """View for the server dashboard"""
+    """The interactive buttons and menus for the dashboard"""
 
     def __init__(self, bot, guild_id: int, preferences: dict):
-        super().__init__(timeout=300)  # 5 minute timeout
+        super().__init__(timeout=300)  # Expire after 5 mins of inactivity
         self.bot = bot
         self.guild_id = guild_id
         self.preferences = preferences
 
-        # Add prefix select menu
+        # Add the prefix dropdown at the top
         self.add_item(PrefixSelect(self.bot, self.guild_id, self.preferences))
 
-        # Update the toggle_auto_ban button style based on preferences
-        # This needs to be done after the view is initialized with all buttons
+        # Make the auto-ban button red/green based on current setting
+        # (Have to do this after creating all buttons)
         for child in self.children:
             if isinstance(child, discord.ui.Button) and child.label == "Toggle Auto-Ban":
                 child.style = discord.ButtonStyle.danger if preferences.get("auto_ban", False) else discord.ButtonStyle.success
 
     @discord.ui.button(label="Change Alert Channel", style=discord.ButtonStyle.primary, emoji="📢", row=1)
     async def change_alert_channel(self, button: discord.ui.Button, interaction: discord.Interaction):
-        """Button to change the alert channel"""
+        """Opens the channel picker when clicked"""
         await interaction.response.send_message(
             "Select a channel for ban alerts:",
             view=AlertChannelView(self.bot, self.guild_id, self.preferences),
@@ -114,7 +116,7 @@ class DashboardView(discord.ui.View):
 
     @discord.ui.button(label="Change Ping Role", style=discord.ButtonStyle.primary, emoji="🔔", row=1)
     async def change_ping_role(self, button: discord.ui.Button, interaction: discord.Interaction):
-        """Button to change the ping role"""
+        """Shows the role selector dropdown"""
         await interaction.response.send_message(
             "Select a role to ping for ban alerts:",
             view=PingRoleView(self.bot, self.guild_id, self.preferences),
@@ -123,17 +125,17 @@ class DashboardView(discord.ui.View):
 
     @discord.ui.button(
         label="Toggle Auto-Ban", 
-        style=discord.ButtonStyle.primary,  # Default style, will be updated in __init__
+        style=discord.ButtonStyle.primary, # placeholder --> Fix in __init__
         emoji="🔄",
         row=2
     )
     async def toggle_auto_ban(self, button: discord.ui.Button, interaction: discord.Interaction):
-        """Button to toggle auto-ban setting"""
-        # Toggle auto-ban setting
+        """Flips the auto-ban setting on/off and changes button color"""
+        # Flip the setting to its opposite
         current_setting = self.preferences.get("auto_ban", False)
         self.preferences["auto_ban"] = not current_setting
 
-        # Update database
+        # Save to DB
         async with aiosqlite.connect("database.db") as db:
             await db.execute(
                 "UPDATE servers SET preferences = ? WHERE server_id = ?",
@@ -141,10 +143,10 @@ class DashboardView(discord.ui.View):
             )
             await db.commit()
 
-        # Update button style
+        # Red when enabled, green when disabled
         button.style = discord.ButtonStyle.danger if self.preferences["auto_ban"] else discord.ButtonStyle.success
 
-        # Create updated embed
+        # Rebuild the embed with updated settings
         embed = discord.Embed(
             title="Server Dashboard",
             description="Manage your server settings using the buttons below.",
@@ -175,28 +177,28 @@ class DashboardView(discord.ui.View):
             inline=False
         )
 
-        # Update message
+        # Update the message with our changes
         await interaction.response.edit_message(embed=embed, view=self)
 
 
 class PrefixSelect(discord.ui.Select):
-    """Select menu for choosing a prefix"""
+    """Dropdown menu for picking your command prefix"""
 
     def __init__(self, bot, guild_id: int, preferences: dict):
         self.bot = bot
         self.guild_id = guild_id
         self.preferences = preferences
 
-        # Get current prefix
+        # Figure out what prefix they're using now
         current_prefix = preferences.get("prefix", "-")
 
-        # Create options for all available prefixes
+        # Make a dropdown with all our prefix choices
         options = [
             discord.SelectOption(
                 label=prefix,
                 value=prefix,
                 description=f"Set {prefix} as the command prefix",
-                default=(prefix == current_prefix)
+                default=(prefix == current_prefix)  # Check the one they're currently using
             )
             for prefix in ["!", ":", ".", ",", "-", "?", ";", "*"]
         ]
@@ -210,14 +212,14 @@ class PrefixSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        """Callback for when a prefix is selected"""
-        # Get selected prefix
+        """Handles when someone picks a new prefix"""
+        # Grab what they selected
         selected_prefix = self.values[0]
 
-        # Update preferences
+        # Store their choice
         self.preferences["prefix"] = selected_prefix
 
-        # Update database
+        # Save it to the database
         async with aiosqlite.connect("database.db") as db:
             await db.execute(
                 "UPDATE servers SET preferences = ? WHERE server_id = ?",
@@ -225,11 +227,11 @@ class PrefixSelect(discord.ui.Select):
             )
             await db.commit()
 
-        # Update select menu
+        # Update the checkmark in the dropdown
         for option in self.options:
             option.default = (option.value == selected_prefix)
 
-        # Create updated embed
+        # Refresh the dashboard with the new prefix
         embed = discord.Embed(
             title="Server Dashboard",
             description="Manage your server settings using the buttons below.",
@@ -260,42 +262,42 @@ class PrefixSelect(discord.ui.Select):
             inline=False
         )
 
-        # Update message
+        # Show the updated dashboard
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
 class AlertChannelView(discord.ui.View):
-    """View for selecting an alert channel"""
+    """Container for the channel dropdown menu"""
 
     def __init__(self, bot, guild_id: int, preferences: dict):
-        super().__init__(timeout=60)  # 1 minute timeout
+        super().__init__(timeout=60)  # Only give them a minute to pick
         self.bot = bot
         self.guild_id = guild_id
         self.preferences = preferences
 
-        # Add channel select
+        # Add the channel dropdown
         self.add_item(AlertChannelSelect(self.bot, self.guild_id, self.preferences))
 
 
 class AlertChannelSelect(discord.ui.Select):
-    """Select menu for choosing an alert channel"""
+    """Dropdown for picking which channel gets ban alerts"""
 
     def __init__(self, bot, guild_id: int, preferences: dict):
         self.bot = bot
         self.guild_id = guild_id
         self.preferences = preferences
 
-        # Get guild channels
+        # Get all the server's channels
         guild = self.bot.get_guild(guild_id)
 
-        # Create options for text channels
+        # Build the dropdown options from text channels
         options = [
             discord.SelectOption(
                 label=f"#{channel.name}",
                 value=str(channel.id),
                 description=f"Set {channel.name} as the alert channel"
             )
-            for channel in guild.text_channels[:25]  # Limit to 25 channels
+            for channel in guild.text_channels[:25]  # Discord only allows 25 options max
         ]
 
         super().__init__(
@@ -306,14 +308,14 @@ class AlertChannelSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        """Callback for when a channel is selected"""
-        # Get selected channel
+        """When they pick a channel, save it and confirm"""
+        # Convert the selected value to an int
         channel_id = int(self.values[0])
 
-        # Update preferences
+        # Remember their choice
         self.preferences["alert_channel_id"] = channel_id
 
-        # Update database
+        # Save to database
         async with aiosqlite.connect("database.db") as db:
             await db.execute(
                 "UPDATE servers SET preferences = ? WHERE server_id = ?",
@@ -321,7 +323,7 @@ class AlertChannelSelect(discord.ui.Select):
             )
             await db.commit()
 
-        # Send confirmation
+        # Let them know it worked
         await interaction.response.edit_message(
             content=f"Alert channel updated to <#{channel_id}>",
             view=None
@@ -329,30 +331,30 @@ class AlertChannelSelect(discord.ui.Select):
 
 
 class PingRoleView(discord.ui.View):
-    """View for selecting a ping role"""
+    """Wrapper for the role picker dropdown"""
 
     def __init__(self, bot, guild_id: int, preferences: dict):
-        super().__init__(timeout=60)  # 1 minute timeout
+        super().__init__(timeout=60)  # Close after a minute if they don't pick
         self.bot = bot
         self.guild_id = guild_id
         self.preferences = preferences
 
-        # Add role select
+        # Add the role dropdown
         self.add_item(PingRoleSelect(self.bot, self.guild_id, self.preferences))
 
 
 class PingRoleSelect(discord.ui.Select):
-    """Select menu for choosing a ping role"""
+    """Dropdown to pick which role gets pinged for ban alerts"""
 
     def __init__(self, bot, guild_id: int, preferences: dict):
         self.bot = bot
         self.guild_id = guild_id
         self.preferences = preferences
 
-        # Get guild roles
+        # Grab all the server's roles
         guild = self.bot.get_guild(guild_id)
 
-        # Create options for roles
+        # Make an option for each role (except @everyone and bot roles)
         options = [
             discord.SelectOption(
                 label=f"@{role.name}",
@@ -361,9 +363,9 @@ class PingRoleSelect(discord.ui.Select):
             )
             for role in guild.roles
             if not role.is_default() and not role.is_bot_managed()
-        ][:25]  # Limit to 25 roles
+        ][:25]  # Keep under Discord's 25 option limit
 
-        # Add option to remove ping role
+        # Also add an option to turn off pings
         options.append(
             discord.SelectOption(
                 label="None",
@@ -380,16 +382,16 @@ class PingRoleSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        """Callback for when a role is selected"""
-        # Get selected role
+        """Handles role selection and saves the choice"""
+        # Get what they picked
         role_id = self.values[0]
 
         if role_id == "0":
-            # Remove ping role
+            # They chose "None" - remove any existing ping role
             if "ping_role_id" in self.preferences:
                 del self.preferences["ping_role_id"]
 
-            # Update database
+            # Save to DB
             async with aiosqlite.connect("database.db") as db:
                 await db.execute(
                     "UPDATE servers SET preferences = ? WHERE server_id = ?",
@@ -397,16 +399,16 @@ class PingRoleSelect(discord.ui.Select):
                 )
                 await db.commit()
 
-            # Send confirmation
+            # Let them know it worked
             await interaction.response.edit_message(
-                content="Ping role removed",
+                content="Ping role removed - no role will be pinged for alerts",
                 view=None
             )
         else:
-            # Update preferences
+            # They picked a role - save it
             self.preferences["ping_role_id"] = int(role_id)
 
-            # Update database
+            # Update the database
             async with aiosqlite.connect("database.db") as db:
                 await db.execute(
                     "UPDATE servers SET preferences = ? WHERE server_id = ?",
@@ -414,7 +416,7 @@ class PingRoleSelect(discord.ui.Select):
                 )
                 await db.commit()
 
-            # Send confirmation
+            # Confirm their choice
             await interaction.response.edit_message(
                 content=f"Ping role updated to <@&{role_id}>",
                 view=None
@@ -422,4 +424,5 @@ class PingRoleSelect(discord.ui.Select):
 
 
 def setup(bot):
+    # Hook up our dashboard cog to the bot
     bot.add_cog(Dashboard(bot))

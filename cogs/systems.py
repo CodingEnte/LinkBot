@@ -8,28 +8,35 @@ from ezcord.internal.dc import slash_command
 
 
 async def preChecks(ctx_or_interaction):
+    """Quick check if bot is in maintenance mode or if user is allowed to use commands"""
     message = "🛠️ The bot is currently under maintenance. Try again later.\n-# More infos can be found in the [Developer News](https://discord.com/channels/1374742971244871732/1375587166419292251)"
 
+    # 0 = bot is online, 1 = maintenance mode
     lockState = 1
 
+    # Figure out if this is a slash command or text command
     is_interaction = isinstance(ctx_or_interaction, discord.Interaction)
 
+    # Get the user ID regardless of command type
     user_id = ctx_or_interaction.user.id if is_interaction else ctx_or_interaction.author.id
 
+    # If we're in maintenance mode and user isn't on the whitelist
     if lockState == 1 and user_id not in [780865480038678528, 833825983895044146, 1287505614443905062]:
         if is_interaction:
+            # For slash commands
             await ctx_or_interaction.response.send_message(
                 embed=discord.Embed(description=message, color=discord.Color.yellow()),
                 ephemeral=True
             )
             print(f"Locked - {user_id}")
         else:
+            # For text commands
             await ctx_or_interaction.send(
                 embed=discord.Embed(description=message, color=discord.Color.yellow()),
                 delete_after=5
             )
             print(f"Locked - {user_id}")
-        return True
+        return True  # Block the command from running
 
 NewSetupPages = {
     "Step1": {
@@ -100,14 +107,17 @@ NewSetupPages = {
 }
 
 class Systems(commands.Cog):
+    """Core system commands and setup wizard"""
+
     def __init__(self, bot):
         self.bot = bot
-        self.setup_data = {}  # Store temporary setup data
+        self.setup_data = {}  # Temp storage during setup wizard
 
     @commands.Cog.listener()
     async def on_ready(self):
+        """Make sure our database is ready to go when the bot starts"""
         async with aiosqlite.connect("database.db") as db:
-            # Create the table if it doesn't exist
+            # Create our main servers table if it's not there
             await db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS servers (
@@ -119,20 +129,21 @@ class Systems(commands.Cog):
                 """
             )
 
-            # Check if preferences column exists, add it if it doesn't
+            # Double-check the preferences column exists (for older installs)
             async with db.execute("PRAGMA table_info(servers)") as cursor:
                 columns = await cursor.fetchall()
                 column_names = [column[1] for column in columns]
 
                 if "preferences" not in column_names:
-                    # Use empty JSON object as default value
+                    # Add it if missing - happens with older bot versions
                     await db.execute("ALTER TABLE servers ADD COLUMN preferences TEXT DEFAULT '{}'")
                     await db.commit()
                     print("Added missing 'preferences' column to servers table")
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        # Initialize the server in the database when the bot joins
+        """Set up a new server when we join it"""
+        # Add the server to our database with default settings
         async with aiosqlite.connect("database.db") as db:
             await db.execute(
                 "INSERT OR IGNORE INTO servers (server_id) VALUES (?)",
@@ -143,17 +154,20 @@ class Systems(commands.Cog):
     @command(name="help", description="Shows help menu with features and commands")
     @commands.guild_only()
     async def help(self, ctx):
+        """Show the help menu with all available commands and features"""
+        # Check if bot is in maintenance mode
         check = await preChecks(ctx)
         if check is True:
             return
 
+        # Create a nice looking help menu
         embed = discord.Embed(
             title="LinkBot Help",
             description="LinkBot connects multiple Discord servers to share ban alerts and maintain server integrity.",
             color=discord.Color.blue()
         )
 
-        # Commands section
+        # List all the commands they can use
         embed.add_field(
             name="📋 Commands",
             value=(
@@ -167,7 +181,7 @@ class Systems(commands.Cog):
             inline=False
         )
 
-        # Features section
+        # Explain what the bot can do
         embed.add_field(
             name="🔒 Features",
             value=(
@@ -181,14 +195,18 @@ class Systems(commands.Cog):
 
         embed.set_footer(text="For more help, contact the bot owner")
 
+        # Show the help menu but delete it after 30 seconds
         await ctx.send(embed=embed, delete_after=30)
 
     @command(name="ping", description="Shows bot latency")
     async def ping(self, ctx):
+        """Check if the bot is responsive and how fast it is"""
+        # Make sure we're not in maintenance mode
         check = await preChecks(ctx)
         if check is True:
             return
 
+        # Calculate ping in milliseconds
         latency = round(self.bot.latency * 1000)
         embed = discord.Embed(
             title="🏓 Pong!",
@@ -196,16 +214,19 @@ class Systems(commands.Cog):
             color=discord.Color.green()
         )
 
+        # Show ping result briefly
         await ctx.send(embed=embed, delete_after=15)
 
     @command(name="prefix", description="Shows or sets custom prefix")
     @commands.guild_only()
     async def prefix(self, ctx, new_prefix: str = None):
+        """View or change the command prefix for this server"""
+        # Check maintenance mode
         check = await preChecks(ctx)
         if check is True:
             return
 
-        # If no new prefix is provided, show the current prefix
+        # Just showing the current prefix
         if new_prefix is None:
             async with aiosqlite.connect("database.db") as db:
                 async with db.execute(
@@ -215,7 +236,7 @@ class Systems(commands.Cog):
                     data = await cursor.fetchone()
 
                 if not data:
-                    # If server doesn't exist in DB, add it with default values
+                    # First time using the bot? Add the server to our DB
                     await db.execute(
                         "INSERT INTO servers (server_id) VALUES (?)",
                         (ctx.guild.id,)
@@ -226,8 +247,10 @@ class Systems(commands.Cog):
                     try:
                         preferences = json.loads(data[0])
                     except json.JSONDecodeError:
+                        # Bad JSON? Just use empty defaults
                         preferences = {}
 
+            # Get their current prefix (or use - as fallback)
             current_prefix = preferences.get("prefix", "-")
 
             embed = discord.Embed(
@@ -239,12 +262,12 @@ class Systems(commands.Cog):
             await ctx.send(embed=embed, delete_after=30)
             return
 
-        # Check if user has admin permissions to set prefix
+        # Changing the prefix - make sure they're an admin
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("You need administrator permissions to change the prefix.", delete_after=10)
             return
 
-        # Update the prefix in the database
+        # Save the new prefix to the database
         async with aiosqlite.connect("database.db") as db:
             async with db.execute(
                 "SELECT preferences FROM servers WHERE server_id = ?",
@@ -253,14 +276,14 @@ class Systems(commands.Cog):
                 data = await cursor.fetchone()
 
             if not data:
-                # If server doesn't exist in DB, add it with the new prefix
+                # Server not in DB yet? Create it with the new prefix
                 preferences = {"prefix": new_prefix}
                 await db.execute(
                     "INSERT INTO servers (server_id, preferences) VALUES (?, ?)",
                     (ctx.guild.id, json.dumps(preferences))
                 )
             else:
-                # Update existing preferences with the new prefix
+                # Update their existing settings with the new prefix
                 try:
                     preferences = json.loads(data[0])
                 except json.JSONDecodeError:
@@ -275,6 +298,7 @@ class Systems(commands.Cog):
 
             await db.commit()
 
+        # Let them know it worked
         embed = discord.Embed(
             title="Prefix Updated",
             description=f"Prefix has been updated to: `{new_prefix}`",
@@ -287,11 +311,13 @@ class Systems(commands.Cog):
     @commands.guild_only()
     @discord.default_permissions(administrator=True)
     async def setup(self, ctx):
+        """Run the initial setup wizard for LinkBot"""
+        # Make sure we're not in maintenance mode
         check = await preChecks(ctx)
         if check is True:
             return
 
-        # Check if server is already set up
+        # See if they've already run setup before
         async with aiosqlite.connect("database.db") as db:
             async with db.execute(
                 "SELECT preferences FROM servers WHERE server_id = ?",
@@ -300,18 +326,18 @@ class Systems(commands.Cog):
                 data = await cursor.fetchone()
 
                 if data:
-                    # Server already exists in database
+                    # They're in our database already
                     try:
                         preferences = json.loads(data[0])
                         if preferences.get("alert_channel_id"):
-                            # Server is already set up, redirect to dashboard
+                            # Looks like they already completed setup - send them to dashboard instead
                             embed = discord.Embed(
                                 title="Server Already Set Up",
                                 description="This server has already been set up. Use the dashboard to update your settings.",
                                 color=discord.Color.blue()
                             )
 
-                            # Create a button to open the dashboard
+                            # Add a handy button to open the dashboard
                             view = discord.ui.View()
                             dashboard_button = discord.ui.Button(
                                 label="Open Dashboard",
@@ -320,7 +346,7 @@ class Systems(commands.Cog):
                             )
 
                             async def dashboard_callback(interaction):
-                                # Get dashboard cog
+                                # Try to load the dashboard
                                 dashboard_cog = self.bot.get_cog("Dashboard")
                                 if dashboard_cog:
                                     await dashboard_cog.dashboard(interaction)
@@ -336,9 +362,10 @@ class Systems(commands.Cog):
                             await ctx.respond(embed=embed, view=view, ephemeral=True)
                             return
                     except (json.JSONDecodeError, TypeError):
-                        pass  # Continue with setup if preferences are invalid
+                        # Something's wrong with their settings JSON - let them redo setup
+                        pass
 
-        # Initialize setup data for this guild
+        # Create a blank slate for the setup wizard
         self.setup_data[ctx.guild.id] = {
             "alert_channel_id": None,
             "ping_role_id": None,
@@ -346,11 +373,12 @@ class Systems(commands.Cog):
             "preferences": {}
         }
 
-        # Start with Step 1
+        # Start at the beginning of our setup wizard
         step = NewSetupPages["Step1"]
         embed = step["embed"]
         skippable = step["skippable"]
 
+        # Show the first setup screen
         await ctx.respond(
             embed=embed, 
             view=NewSetupView(self.bot, step=1, skipable=skippable, message=None, cog=self, guild_id=ctx.guild.id), 
@@ -359,11 +387,14 @@ class Systems(commands.Cog):
 
 
 def setup(bot):
+    # Register our systems cog with all the basic commands
     bot.add_cog(Systems(bot))
 
 class NewSetupView(discord.ui.View):
+    """The interactive setup wizard with buttons and dropdowns"""
+
     def __init__(self, bot, step: int, skipable: bool, message, cog, guild_id: int):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # No timeout - let them take their time
         self.bot = bot
         self.step = step
         self.skipable = skipable
@@ -371,21 +402,22 @@ class NewSetupView(discord.ui.View):
         self.cog = cog
         self.guild_id = guild_id
 
-        # Add appropriate components based on step type
+        # Figure out what kind of UI elements we need for this step
         step_data = NewSetupPages[f"Step{step}"]
         step_type = step_data.get("type", "info")
 
-        # Remove the continue button for steps that need other inputs
+        # Info steps just need a continue button, others need special inputs
         if step_type != "info":
-            self.remove_item(self.children[0])  # Remove continue button
+            self.remove_item(self.children[0])  # Get rid of the continue button
 
-        # Add appropriate components based on step type
+        # Add the right UI elements based on what this step needs
         if step_type == "prefix_select":
             self.add_item(PrefixSelect(self.cog, self.guild_id))
         elif step_type == "channel_select":
             self.add_item(ChannelSelect(self.cog, self.guild_id))
         elif step_type == "role_select":
             self.add_item(RoleSelect(self.cog, self.guild_id))
+            # Some steps can be skipped
             if skipable:
                 self.add_item(SkipButton(self.cog, self.guild_id, self.step))
         elif step_type == "toggle":
@@ -394,27 +426,32 @@ class NewSetupView(discord.ui.View):
 
     @discord.ui.button(label="Continue", style=discord.ButtonStyle.green, emoji="✅", custom_id="continue")
     async def continue_button(self, button, interaction):
+        """The main 'next' button for the setup wizard"""
+        # Make sure we're not in maintenance mode
         check = await preChecks(interaction)
         if check is True:
             return
 
+        # Move to the next step
         await self.advance_step(interaction)
 
     async def advance_step(self, interaction):
+        """Move to the next step in the setup process"""
+        # Figure out which step comes next
         new_step = self.step + 1
 
-        # Check if we've reached the end of setup
+        # If there's no next step, we're done with setup
         if f"Step{new_step}" not in NewSetupPages:
-            # Save all preferences to database
+            # We've reached the end - save everything to the database
             await self.save_preferences(interaction)
             return
 
-        # Get next step data
+        # Get the content for the next step
         step = NewSetupPages[f"Step{new_step}"]
         embed = step["embed"]
         skippable = step["skippable"]
 
-        # Create new view for next step
+        # Create the UI for the next step
         new_view = NewSetupView(
             self.bot, 
             step=new_step, 
@@ -424,29 +461,30 @@ class NewSetupView(discord.ui.View):
             guild_id=self.guild_id
         )
 
-        # Send or edit message
+        # Update the message with the new step
         if interaction.response.is_done():
             await interaction.message.edit(embed=embed, view=new_view)
         else:
             await interaction.response.edit_message(embed=embed, view=new_view)
 
     async def save_preferences(self, interaction):
-        # Get setup data for this guild
+        """Save all the settings from the setup wizard to the database"""
+        # Grab all the settings they chose during setup
         setup_data = self.cog.setup_data.get(self.guild_id, {})
 
-        # Get preferences from setup data if they exist
+        # Get any prefix they might have set
         setup_preferences = setup_data.get("preferences", {})
 
-        # Create preferences JSON
+        # Bundle everything into one settings object
         preferences = {
             "alert_channel_id": setup_data.get("alert_channel_id"),
             "ping_role_id": setup_data.get("ping_role_id"),
             "auto_ban": setup_data.get("auto_ban", False),
-            "blocked_servers": [],  # Initialize empty list for blocked servers
-            "prefix": setup_preferences.get("prefix", "-")  # Get prefix from setup preferences or use default
+            "blocked_servers": [],  # Start with an empty blocklist
+            "prefix": setup_preferences.get("prefix", "-")  # Use their chosen prefix or default to "-"
         }
 
-        # Save to database
+        # Store everything in the database
         async with aiosqlite.connect("database.db") as db:
             await db.execute(
                 "INSERT OR REPLACE INTO servers (server_id, preferences, integrity, blacklisted) VALUES (?, ?, 100, 0)",
@@ -454,13 +492,14 @@ class NewSetupView(discord.ui.View):
             )
             await db.commit()
 
-        # Show completion message
+        # Create a nice completion message
         embed = discord.Embed(
             title="Setup Complete!",
             description="LinkBot has been successfully configured for your server.",
             color=discord.Color.green()
         )
 
+        # Show them a summary of their settings
         embed.add_field(
             name="Alert Channel", 
             value=f"<#{preferences['alert_channel_id']}>" if preferences['alert_channel_id'] else "Not set",
@@ -487,11 +526,11 @@ class NewSetupView(discord.ui.View):
 
         embed.set_footer(text="Use /dashboard to update your settings in the future.")
 
-        # Clear setup data
+        # Clean up our temporary data
         if self.guild_id in self.cog.setup_data:
             del self.cog.setup_data[self.guild_id]
 
-        # Create a button to open the dashboard
+        # Add a dashboard button for easy access
         view = discord.ui.View()
         dashboard_button = discord.ui.Button(
             label="Open Dashboard",
@@ -500,7 +539,7 @@ class NewSetupView(discord.ui.View):
         )
 
         async def dashboard_callback(button_interaction):
-            # Get dashboard cog
+            # Try to open the dashboard
             dashboard_cog = self.bot.get_cog("Dashboard")
             if dashboard_cog:
                 await dashboard_cog.dashboard(button_interaction)
@@ -513,6 +552,7 @@ class NewSetupView(discord.ui.View):
         dashboard_button.callback = dashboard_callback
         view.add_item(dashboard_button)
 
+        # Show the completion message
         if interaction.response.is_done():
             await interaction.message.edit(embed=embed, view=view)
         else:

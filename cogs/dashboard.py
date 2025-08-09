@@ -97,6 +97,12 @@ class DashboardView(discord.ui.View):
         # Add prefix select menu
         self.add_item(PrefixSelect(self.bot, self.guild_id, self.preferences))
 
+        # Update the toggle_auto_ban button style based on preferences
+        # This needs to be done after the view is initialized with all buttons
+        for child in self.children:
+            if isinstance(child, discord.ui.Button) and child.label == "Toggle Auto-Ban":
+                child.style = discord.ButtonStyle.danger if preferences.get("auto_ban", False) else discord.ButtonStyle.success
+
     @discord.ui.button(label="Change Alert Channel", style=discord.ButtonStyle.primary, emoji="📢", row=1)
     async def change_alert_channel(self, button: discord.ui.Button, interaction: discord.Interaction):
         """Button to change the alert channel"""
@@ -117,7 +123,7 @@ class DashboardView(discord.ui.View):
 
     @discord.ui.button(
         label="Toggle Auto-Ban", 
-        style=discord.ButtonStyle.success if not self.preferences.get("auto_ban", False) else discord.ButtonStyle.danger,
+        style=discord.ButtonStyle.primary,  # Default style, will be updated in __init__
         emoji="🔄",
         row=2
     )

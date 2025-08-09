@@ -9,7 +9,7 @@ from ezcord.internal.dc import slash_command
 
 async def preChecks(ctx_or_interaction):
     """Quick check if bot is in maintenance mode or if user is allowed to use commands"""
-    message = "🛠️ The bot is currently under maintenance. Try again later.\n-# More infos can be found in the [Developer News](https://discord.com/channels/1374742971244871732/1375587166419292251)"
+    message = "🛠️ The bot is currently under maintenance. Try again later.\n-# The LinkBot team is aware of the issue in the setup when selecting a channel. We are working on a solution and will deploy it as soon as possible. Please reach out at our [developer's portfolio](<https://entes-portfolio.fly.dev>)"
 
     # 0 = bot is online, 1 = maintenance mode
     lockState = 1

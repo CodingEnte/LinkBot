@@ -92,7 +92,7 @@ class Dashboard(commands.Cog):
         if check is True:
             return
 
-        """Opens the server settings dashboard for adminis"""
+        """Opens the settings dashboard for server admins"""
         # Grab the server's current settings
         async with aiosqlite.connect("database.db") as db:
             async with db.execute(

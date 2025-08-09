@@ -27,7 +27,7 @@ embed = discord.Embed(
 embed.set_footer(text=f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 ezcord.set_embed_templates(error_embed=embed, warn_embed=embed)
 
-# Map status string to discord.Status
+# Quick lookup for status strings
 status_map = {
     "online": discord.Status.online,
     "idle": discord.Status.idle,

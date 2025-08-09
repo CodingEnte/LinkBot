@@ -71,26 +71,29 @@ NewSetupPages = {
     "Step3": {
         "embed": discord.Embed(
             title="Alert Channel",
-            description="Please select a channel where ban alerts from other servers will be sent. "
-                        "This should be a channel that your moderators can access."
+            description="Please ping the channel where ban alerts from other servers will be sent. "
+                        "This should be a channel that your moderators can access.\n\n"
+                        "**Example:** #alerts"
         )
         .set_footer(
             text="LinkBot setup | 3/5"
         ),
         "skippable": False,
-        "type": "channel_select"
+        "type": "channel_ping"
     },
     "Step4": {
         "embed": discord.Embed(
             title="Ping Role",
-            description="Optionally, select a role to ping when ban alerts are received. "
-                        "This can help ensure your moderation team is notified promptly."
+            description="Optionally, ping a role to be notified when ban alerts are received. "
+                        "This can help ensure your moderation team is notified promptly.\n\n"
+                        "**Example:** @Moderators\n\n"
+                        "You can skip this step if you don't want to ping any role."
         )
         .set_footer(
             text="LinkBot setup | 4/5"
         ),
         "skippable": True,
-        "type": "role_select"
+        "type": "role_ping"
     },
     "Step5": {
         "embed": discord.Embed(
@@ -113,6 +116,8 @@ class Systems(commands.Cog):
         self.bot = bot
         self.setup_data = {}  # Temp storage during setup wizard
         self.active_setups = set()  # Track guilds with active setup processes
+        self.channel_ping_views = {}  # Track views waiting for channel pings
+        self.role_ping_views = {}  # Track views waiting for role pings
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -151,6 +156,37 @@ class Systems(commands.Cog):
                 (guild.id,)
             )
             await db.commit()
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        """Listen for channel and role mentions during setup"""
+        # Ignore messages from bots
+        if message.author.bot:
+            return
+
+        # Check if this guild has an active setup
+        if message.guild and message.guild.id in self.active_setups:
+            # Check for channel mentions
+            if message.channel_mentions and message.guild.id in self.channel_ping_views:
+                # Get the first mentioned channel
+                channel = message.channel_mentions[0]
+
+                # Save the channel ID to setup data
+                self.setup_data[message.guild.id]["alert_channel_id"] = channel.id
+
+                # Acknowledge the channel selection
+                await message.reply(f"Channel {channel.mention} has been selected for ban alerts. Click the button to continue.")
+
+            # Check for role mentions
+            if message.role_mentions and message.guild.id in self.role_ping_views:
+                # Get the first mentioned role
+                role = message.role_mentions[0]
+
+                # Save the role ID to setup data
+                self.setup_data[message.guild.id]["ping_role_id"] = role.id
+
+                # Acknowledge the role selection
+                await message.reply(f"Role {role.mention} will be pinged for ban alerts. Click the button to continue.")
 
     @command(name="help", description="Shows help menu with features and commands")
     @commands.guild_only()
@@ -431,8 +467,21 @@ class NewSetupView(discord.ui.View):
             self.add_item(PrefixSelect(self.cog, self.guild_id))
         elif step_type == "channel_select":
             self.add_item(ChannelSelect(self.cog, self.guild_id))
+        elif step_type == "channel_ping":
+            # For channel ping, we add a continue button that will be used after the user pings a channel
+            self.add_item(ChannelPingButton(self.cog, self.guild_id))
+            # Register this view for channel mention handling
+            self.cog.channel_ping_views[self.guild_id] = self
         elif step_type == "role_select":
             self.add_item(RoleSelect(self.cog, self.guild_id))
+            # Some steps can be skipped
+            if skipable:
+                self.add_item(SkipButton(self.cog, self.guild_id, self.step))
+        elif step_type == "role_ping":
+            # For role ping, we add a continue button that will be used after the user pings a role
+            self.add_item(RolePingButton(self.cog, self.guild_id))
+            # Register this view for role mention handling
+            self.cog.role_ping_views[self.guild_id] = self
             # Some steps can be skipped
             if skipable:
                 self.add_item(SkipButton(self.cog, self.guild_id, self.step))
@@ -736,6 +785,68 @@ class DisableButton(discord.ui.Button):
         # Get parent view and advance to next step
         parent_view = self.view
         await parent_view.advance_step(interaction)
+
+
+class ChannelPingButton(discord.ui.Button):
+    """Button that waits for a channel ping"""
+
+    def __init__(self, cog, guild_id: int):
+        self.cog = cog
+        self.guild_id = guild_id
+
+        super().__init__(
+            label="I've pinged the channel",
+            style=discord.ButtonStyle.primary,
+            emoji="✅",
+            custom_id="channel_ping_button"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Check if we've received a channel ping
+        if self.guild_id in self.cog.setup_data and "alert_channel_id" in self.cog.setup_data[self.guild_id]:
+            # Store the message reference for timeout handling
+            self.view.message = interaction.message
+
+            # Get parent view and advance to next step
+            parent_view = self.view
+            await parent_view.advance_step(interaction)
+        else:
+            # No channel ping received yet
+            await interaction.response.send_message(
+                "Please ping a channel first by typing `#channel-name` in the chat.",
+                ephemeral=True
+            )
+
+
+class RolePingButton(discord.ui.Button):
+    """Button that waits for a role ping"""
+
+    def __init__(self, cog, guild_id: int):
+        self.cog = cog
+        self.guild_id = guild_id
+
+        super().__init__(
+            label="I've pinged the role",
+            style=discord.ButtonStyle.primary,
+            emoji="✅",
+            custom_id="role_ping_button"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Check if we've received a role ping
+        if self.guild_id in self.cog.setup_data and "ping_role_id" in self.cog.setup_data[self.guild_id]:
+            # Store the message reference for timeout handling
+            self.view.message = interaction.message
+
+            # Get parent view and advance to next step
+            parent_view = self.view
+            await parent_view.advance_step(interaction)
+        else:
+            # No role ping received yet
+            await interaction.response.send_message(
+                "Please ping a role first by typing `@role-name` in the chat, or click Skip if you don't want to ping any role.",
+                ephemeral=True
+            )
 
 
 class PrefixSelect(discord.ui.Select):

@@ -15,6 +15,47 @@ class Dashboard(commands.Cog):
         self.bot = bot
         # List of available prefixes
         self.available_prefixes = ["!", ":", ".", ",", "-", "?", ";", "*"]
+        # Track views waiting for channel pings
+        self.channel_ping_views = {}
+        # Track channel selections from pings
+        self.channel_selections = {}
+        # Track views waiting for role pings
+        self.role_ping_views = {}
+        # Track role selections from pings
+        self.role_selections = {}
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        """Listen for channel and role mentions during dashboard interactions"""
+        # Ignore messages from bots
+        if message.author.bot:
+            return
+
+        # Check if this guild has an active channel ping view
+        if message.guild and message.guild.id in self.channel_ping_views:
+            # Check for channel mentions
+            if message.channel_mentions:
+                # Get the first mentioned channel
+                channel = message.channel_mentions[0]
+
+                # Save the channel ID
+                self.channel_selections[message.guild.id] = channel.id
+
+                # Acknowledge the channel selection
+                await message.reply(f"Channel {channel.mention} has been selected for ban alerts. Click the button to confirm.")
+
+        # Check if this guild has an active role ping view
+        if message.guild and message.guild.id in self.role_ping_views:
+            # Check for role mentions
+            if message.role_mentions:
+                # Get the first mentioned role
+                role = message.role_mentions[0]
+
+                # Save the role ID
+                self.role_selections[message.guild.id] = role.id
+
+                # Acknowledge the role selection
+                await message.reply(f"Role {role.mention} will be pinged for ban alerts. Click the button to confirm.")
 
     @slash_command(name="dashboard", description="Open the server settings dashboard")
     @commands.guild_only()
@@ -107,19 +148,19 @@ class DashboardView(discord.ui.View):
 
     @discord.ui.button(label="Change Alert Channel", style=discord.ButtonStyle.primary, emoji="📢", row=1)
     async def change_alert_channel(self, button: discord.ui.Button, interaction: discord.Interaction):
-        """Opens the channel picker when clicked"""
+        """Opens the channel ping view when clicked"""
         await interaction.response.send_message(
-            "Select a channel for ban alerts:",
-            view=AlertChannelView(self.bot, self.guild_id, self.preferences),
+            "Please ping the channel where you want ban alerts to be sent.\n\n**Example:** #alerts",
+            view=AlertChannelPingView(self.bot, self.guild_id, self.preferences),
             ephemeral=True
         )
 
     @discord.ui.button(label="Change Ping Role", style=discord.ButtonStyle.primary, emoji="🔔", row=1)
     async def change_ping_role(self, button: discord.ui.Button, interaction: discord.Interaction):
-        """Shows the role selector dropdown"""
+        """Shows the role ping view"""
         await interaction.response.send_message(
-            "Select a role to ping for ban alerts:",
-            view=PingRoleView(self.bot, self.guild_id, self.preferences),
+            "Please ping the role you want to be notified for ban alerts.\n\n**Example:** @Moderators\n\nYou can also remove the ping role by clicking the Remove button.",
+            view=PingRolePingView(self.bot, self.guild_id, self.preferences),
             ephemeral=True
         )
 
@@ -266,54 +307,178 @@ class PrefixSelect(discord.ui.Select):
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
-class AlertChannelView(discord.ui.View):
-    """Container for the channel dropdown menu"""
+class AlertChannelPingView(discord.ui.View):
+    """View that waits for a channel ping"""
 
     def __init__(self, bot, guild_id: int, preferences: dict):
-        super().__init__(timeout=60)  # Only give them a minute to pick
+        super().__init__(timeout=60)  # Only give them a minute to ping
         self.bot = bot
         self.guild_id = guild_id
         self.preferences = preferences
 
-        # Add the channel dropdown
-        self.add_item(AlertChannelSelect(self.bot, self.guild_id, self.preferences))
+        # Register this view for channel mention handling
+        self.bot.cog_instances["Dashboard"].channel_ping_views[guild_id] = self
+
+        # Add a button to confirm after pinging
+        self.add_item(AlertChannelConfirmButton(self.bot, self.guild_id, self.preferences))
+
+    async def on_timeout(self):
+        """Clean up when the view times out"""
+        # Remove this view from the tracking dict
+        if self.guild_id in self.bot.cog_instances["Dashboard"].channel_ping_views:
+            del self.bot.cog_instances["Dashboard"].channel_ping_views[self.guild_id]
 
 
-class AlertChannelSelect(discord.ui.Select):
-    """Dropdown for picking which channel gets ban alerts"""
+class AlertChannelConfirmButton(discord.ui.Button):
+    """Button to confirm channel selection after pinging"""
 
     def __init__(self, bot, guild_id: int, preferences: dict):
         self.bot = bot
         self.guild_id = guild_id
         self.preferences = preferences
-
-        # Get all the server's channels
-        guild = self.bot.get_guild(guild_id)
-
-        # Build the dropdown options from text channels
-        options = [
-            discord.SelectOption(
-                label=f"#{channel.name}",
-                value=str(channel.id),
-                description=f"Set {channel.name} as the alert channel"
-            )
-            for channel in guild.text_channels[:25]  # Discord only allows 25 options max
-        ]
 
         super().__init__(
-            placeholder="Select a channel for ban alerts",
-            min_values=1,
-            max_values=1,
-            options=options
+            label="I've pinged the channel",
+            style=discord.ButtonStyle.primary,
+            emoji="✅"
         )
 
     async def callback(self, interaction: discord.Interaction):
-        """When they pick a channel, save it and confirm"""
-        # Convert the selected value to an int
-        channel_id = int(self.values[0])
+        """Check if a channel has been pinged and save it"""
+        dashboard_cog = self.bot.cog_instances["Dashboard"]
 
-        # Remember their choice
-        self.preferences["alert_channel_id"] = channel_id
+        # Check if we've received a channel ping for this guild
+        if self.guild_id in dashboard_cog.channel_selections:
+            # Get the channel ID
+            channel_id = dashboard_cog.channel_selections[self.guild_id]
+
+            # Save to preferences
+            self.preferences["alert_channel_id"] = channel_id
+
+            # Save to database
+            async with aiosqlite.connect("database.db") as db:
+                await db.execute(
+                    "UPDATE servers SET preferences = ? WHERE server_id = ?",
+                    (json.dumps(self.preferences), self.guild_id)
+                )
+                await db.commit()
+
+            # Clean up
+            if self.guild_id in dashboard_cog.channel_ping_views:
+                del dashboard_cog.channel_ping_views[self.guild_id]
+            if self.guild_id in dashboard_cog.channel_selections:
+                del dashboard_cog.channel_selections[self.guild_id]
+
+            # Let them know it worked
+            await interaction.response.edit_message(
+                content=f"Alert channel updated to <#{channel_id}>",
+                view=None
+            )
+        else:
+            # No channel ping received yet
+            await interaction.response.send_message(
+                "Please ping a channel first by typing `#channel-name` in the chat.",
+                ephemeral=True
+            )
+
+
+class PingRolePingView(discord.ui.View):
+    """View that waits for a role ping"""
+
+    def __init__(self, bot, guild_id: int, preferences: dict):
+        super().__init__(timeout=60)  # Only give them a minute to ping
+        self.bot = bot
+        self.guild_id = guild_id
+        self.preferences = preferences
+
+        # Register this view for role mention handling
+        self.bot.cog_instances["Dashboard"].role_ping_views[guild_id] = self
+
+        # Add buttons to confirm after pinging or remove the ping role
+        self.add_item(PingRoleConfirmButton(self.bot, self.guild_id, self.preferences))
+        self.add_item(RemovePingRoleButton(self.bot, self.guild_id, self.preferences))
+
+    async def on_timeout(self):
+        """Clean up when the view times out"""
+        # Remove this view from the tracking dict
+        if self.guild_id in self.bot.cog_instances["Dashboard"].role_ping_views:
+            del self.bot.cog_instances["Dashboard"].role_ping_views[self.guild_id]
+
+
+class PingRoleConfirmButton(discord.ui.Button):
+    """Button to confirm role selection after pinging"""
+
+    def __init__(self, bot, guild_id: int, preferences: dict):
+        self.bot = bot
+        self.guild_id = guild_id
+        self.preferences = preferences
+
+        super().__init__(
+            label="I've pinged the role",
+            style=discord.ButtonStyle.primary,
+            emoji="✅"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        """Check if a role has been pinged and save it"""
+        dashboard_cog = self.bot.cog_instances["Dashboard"]
+
+        # Check if we've received a role ping for this guild
+        if self.guild_id in dashboard_cog.role_selections:
+            # Get the role ID
+            role_id = dashboard_cog.role_selections[self.guild_id]
+
+            # Save to preferences
+            self.preferences["ping_role_id"] = role_id
+
+            # Save to database
+            async with aiosqlite.connect("database.db") as db:
+                await db.execute(
+                    "UPDATE servers SET preferences = ? WHERE server_id = ?",
+                    (json.dumps(self.preferences), self.guild_id)
+                )
+                await db.commit()
+
+            # Clean up
+            if self.guild_id in dashboard_cog.role_ping_views:
+                del dashboard_cog.role_ping_views[self.guild_id]
+            if self.guild_id in dashboard_cog.role_selections:
+                del dashboard_cog.role_selections[self.guild_id]
+
+            # Let them know it worked
+            await interaction.response.edit_message(
+                content=f"Ping role updated to <@&{role_id}>",
+                view=None
+            )
+        else:
+            # No role ping received yet
+            await interaction.response.send_message(
+                "Please ping a role first by typing `@role-name` in the chat.",
+                ephemeral=True
+            )
+
+
+class RemovePingRoleButton(discord.ui.Button):
+    """Button to remove the ping role"""
+
+    def __init__(self, bot, guild_id: int, preferences: dict):
+        self.bot = bot
+        self.guild_id = guild_id
+        self.preferences = preferences
+
+        super().__init__(
+            label="Remove Ping Role",
+            style=discord.ButtonStyle.danger,
+            emoji="❌"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        """Remove the ping role"""
+        dashboard_cog = self.bot.cog_instances["Dashboard"]
+
+        # Remove the ping role from preferences
+        if "ping_role_id" in self.preferences:
+            del self.preferences["ping_role_id"]
 
         # Save to database
         async with aiosqlite.connect("database.db") as db:
@@ -323,104 +488,17 @@ class AlertChannelSelect(discord.ui.Select):
             )
             await db.commit()
 
+        # Clean up
+        if self.guild_id in dashboard_cog.role_ping_views:
+            del dashboard_cog.role_ping_views[self.guild_id]
+        if self.guild_id in dashboard_cog.role_selections:
+            del dashboard_cog.role_selections[self.guild_id]
+
         # Let them know it worked
         await interaction.response.edit_message(
-            content=f"Alert channel updated to <#{channel_id}>",
+            content="Ping role removed - no role will be pinged for alerts",
             view=None
         )
-
-
-class PingRoleView(discord.ui.View):
-    """Wrapper for the role picker dropdown"""
-
-    def __init__(self, bot, guild_id: int, preferences: dict):
-        super().__init__(timeout=60)  # Close after a minute if they don't pick
-        self.bot = bot
-        self.guild_id = guild_id
-        self.preferences = preferences
-
-        # Add the role dropdown
-        self.add_item(PingRoleSelect(self.bot, self.guild_id, self.preferences))
-
-
-class PingRoleSelect(discord.ui.Select):
-    """Dropdown to pick which role gets pinged for ban alerts"""
-
-    def __init__(self, bot, guild_id: int, preferences: dict):
-        self.bot = bot
-        self.guild_id = guild_id
-        self.preferences = preferences
-
-        # Grab all the server's roles
-        guild = self.bot.get_guild(guild_id)
-
-        # Make an option for each role (except @everyone and bot roles)
-        options = [
-            discord.SelectOption(
-                label=f"@{role.name}",
-                value=str(role.id),
-                description=f"Ping {role.name} for ban alerts"
-            )
-            for role in guild.roles
-            if not role.is_default() and not role.is_bot_managed()
-        ][:25]  # Keep under Discord's 25 option limit
-
-        # Also add an option to turn off pings
-        options.append(
-            discord.SelectOption(
-                label="None",
-                value="0",
-                description="Don't ping any role"
-            )
-        )
-
-        super().__init__(
-            placeholder="Select a role to ping for ban alerts",
-            min_values=1,
-            max_values=1,
-            options=options
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        """Handles role selection and saves the choice"""
-        # Get what they picked
-        role_id = self.values[0]
-
-        if role_id == "0":
-            # They chose "None" - remove any existing ping role
-            if "ping_role_id" in self.preferences:
-                del self.preferences["ping_role_id"]
-
-            # Save to DB
-            async with aiosqlite.connect("database.db") as db:
-                await db.execute(
-                    "UPDATE servers SET preferences = ? WHERE server_id = ?",
-                    (json.dumps(self.preferences), self.guild_id)
-                )
-                await db.commit()
-
-            # Let them know it worked
-            await interaction.response.edit_message(
-                content="Ping role removed - no role will be pinged for alerts",
-                view=None
-            )
-        else:
-            # They picked a role - save it
-            self.preferences["ping_role_id"] = int(role_id)
-
-            # Update the database
-            async with aiosqlite.connect("database.db") as db:
-                await db.execute(
-                    "UPDATE servers SET preferences = ? WHERE server_id = ?",
-                    (json.dumps(self.preferences), self.guild_id)
-                )
-                await db.commit()
-
-            # Confirm their choice
-            await interaction.response.edit_message(
-                content=f"Ping role updated to <@&{role_id}>",
-                view=None
-            )
 
 
 def setup(bot):

@@ -8,7 +8,7 @@ import aiosqlite
 import discord
 import ezcord
 from colorama import Fore, Style
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 intents = discord.Intents.all()
 
@@ -68,6 +68,16 @@ async def update_activity(bot_instance):
         url="https://www.twitch.tv/discord"  # Required for streaming status
     )
     await bot_instance.change_presence(activity=activity)
+
+# Task to update guild count every 30 seconds
+@tasks.loop(seconds=30)
+async def update_guild_count():
+    await update_activity(bot)
+
+# Wait until the bot is ready before starting the task
+@update_guild_count.before_loop
+async def before_update_guild_count():
+    await bot.wait_until_ready()
 
 bot = ezcord.BridgeBot(
     intents=intents,
@@ -151,6 +161,10 @@ async def on_ready():
     # Update bot activity with current server count
     await update_activity(bot)
 
+    # Start the task to update guild count every 30 seconds
+    if not update_guild_count.is_running():
+        update_guild_count.start()
+
     execute_directory = os.getcwd()
     cogs_directory = os.path.join(execute_directory, 'cogs')
 
@@ -196,6 +210,14 @@ def count_lines(base, files, dirs):
         except Exception as e:
             print(f"Error reading {path}: {e}")
     return counts, total_lines, total_chars
+
+@bot.event
+async def on_close():
+    """Event handler for when the bot is closing.
+    Cancels any running tasks to ensure clean shutdown."""
+    if update_guild_count.is_running():
+        update_guild_count.cancel()
+    print("Bot is shutting down. Tasks have been cancelled.")
 
 if __name__ == "__main__":
     for filename in os.listdir("cogs"):

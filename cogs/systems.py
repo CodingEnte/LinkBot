@@ -165,6 +165,48 @@ class Systems(commands.Cog):
         if message.author.bot:
             return
 
+        # Check if the bot is mentioned in the message
+        if self.bot.user in message.mentions:
+            # Save the channel where the bot was mentioned
+            channel = message.channel
+
+            # Check if this guild has an active setup
+            if message.guild and message.guild.id in self.active_setups:
+                # Check if the message is from the user who started the setup
+                if message.author.id == self.setup_owners.get(message.guild.id):
+                    # Save the channel ID to setup data
+                    self.setup_data[message.guild.id]["alert_channel_id"] = channel.id
+
+                    # Get the view and update the embed if it exists
+                    if message.guild.id in self.channel_ping_views:
+                        view = self.channel_ping_views[message.guild.id]
+                        if view and view.message:
+                            # Update the embed to show the selected channel
+                            embed = view.message.embeds[0]
+                            embed.description = f"Please ping the channel where ban alerts from other servers will be sent. " \
+                                              f"This should be a channel that your moderators can access.\n\n" \
+                                              f"**Example:** #alerts\n\n" \
+                                              f"**Selected Channel:** {channel.mention}"
+
+                            # Enable the continue button
+                            for child in view.children:
+                                if isinstance(child, ChannelPingButton):
+                                    child.disabled = False
+
+                            # Update the message with the new embed and enabled button
+                            await view.message.edit(embed=embed, view=view)
+
+                    # Send confirmation message
+                    await message.reply(f"#{channel.name} was saved. Return to the setup panel to continue or ping the bot in a different channel to update your choice.")
+                else:
+                    # If not the setup owner, just acknowledge the ping
+                    await message.reply("Only the user who started the setup can select a channel.")
+            else:
+                # If no active setup, just acknowledge the ping
+                await message.reply("There is no active setup in this server. Use `/setup` to start the setup process.")
+
+            return
+
         # Check if this guild has an active setup
         if message.guild and message.guild.id in self.active_setups:
             # Check if the message is from the user who started the setup

@@ -31,6 +31,24 @@ class Dashboard(commands.Cog):
         if message.author.bot:
             return
 
+        # Check if the bot is mentioned in the message
+        if self.bot.user in message.mentions:
+            # Save the channel where the bot was mentioned
+            channel = message.channel
+
+            # Check if this guild has an active channel ping view
+            if message.guild and message.guild.id in self.channel_ping_views:
+                # Save the channel ID
+                self.channel_selections[message.guild.id] = channel.id
+
+                # Send confirmation message
+                await message.reply(f"#{channel.name} was saved. Return to the dashboard panel to continue or ping the bot in a different channel to update your choice.")
+            else:
+                # If no active channel ping view, just acknowledge the ping
+                await message.reply("There is no active channel selection in progress. Use the dashboard to change your alert channel.")
+
+            return
+
         # Check if this guild has an active channel ping view
         if message.guild and message.guild.id in self.channel_ping_views:
             # Check for channel mentions
@@ -64,7 +82,7 @@ class Dashboard(commands.Cog):
         check = await preChecks(ctx)
         if check is True:
             return
-        
+
         """Opens the server settings dashboard for adminis"""
         # Grab the server's current settings
         async with aiosqlite.connect("database.db") as db:

@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 from discord.ext.bridge import bridge_command
 from ezcord.internal.dc import slash_command
-
+from cogs.system import preChecks
 
 class Dashboard(commands.Cog):
     """The server settings dashboard (admin only)"""
@@ -20,6 +20,10 @@ class Dashboard(commands.Cog):
     @commands.guild_only()
     @discord.default_permissions(administrator=True)
     async def dashboard(self, ctx):
+        check = await preChecks(ctx)
+        if check is True:
+            return
+        
         """Opens the server settings dashboard for adminis"""
         # Grab the server's current settings
         async with aiosqlite.connect("database.db") as db:

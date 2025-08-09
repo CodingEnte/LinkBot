@@ -102,11 +102,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Copyright © 2025 CraftEnte — All rights reserved.
 
+This source code is made publicly viewable for reference purposes only.  
+You are not permitted to use, copy, modify, compile, distribute, or run this software, in whole or in part, without prior written permission from the author.
 ## Support
 
-If you need help with the bot, join our [support server](https://discord.gg/yoursupportserver) or open an issue on GitHub.
+If you need help with the bot, join our [support server](https://discord.gg/lar) or open an issue on GitHub.
 
 ---
 

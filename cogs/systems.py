@@ -118,6 +118,7 @@ class Systems(commands.Cog):
         self.active_setups = set()  # Track guilds with active setup processes
         self.channel_ping_views = {}  # Track views waiting for channel pings
         self.role_ping_views = {}  # Track views waiting for role pings
+        self.setup_owners = {}  # Track which user started the setup for each guild
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -166,6 +167,10 @@ class Systems(commands.Cog):
 
         # Check if this guild has an active setup
         if message.guild and message.guild.id in self.active_setups:
+            # Check if the message is from the user who started the setup
+            if message.author.id != self.setup_owners.get(message.guild.id):
+                return
+
             # Check for channel mentions
             if message.channel_mentions and message.guild.id in self.channel_ping_views:
                 # Get the first mentioned channel
@@ -173,6 +178,24 @@ class Systems(commands.Cog):
 
                 # Save the channel ID to setup data
                 self.setup_data[message.guild.id]["alert_channel_id"] = channel.id
+
+                # Get the view and update the embed
+                view = self.channel_ping_views[message.guild.id]
+                if view and view.message:
+                    # Update the embed to show the selected channel
+                    embed = view.message.embeds[0]
+                    embed.description = f"Please ping the channel where ban alerts from other servers will be sent. " \
+                                       f"This should be a channel that your moderators can access.\n\n" \
+                                       f"**Example:** #alerts\n\n" \
+                                       f"**Selected Channel:** {channel.mention}"
+
+                    # Enable the continue button
+                    for child in view.children:
+                        if isinstance(child, ChannelPingButton):
+                            child.disabled = False
+
+                    # Update the message with the new embed and enabled button
+                    await view.message.edit(embed=embed, view=view)
 
                 # Acknowledge the channel selection
                 await message.reply(f"Channel {channel.mention} has been selected for ban alerts. Click the button to continue.")
@@ -184,6 +207,25 @@ class Systems(commands.Cog):
 
                 # Save the role ID to setup data
                 self.setup_data[message.guild.id]["ping_role_id"] = role.id
+
+                # Get the view and update the embed
+                view = self.role_ping_views[message.guild.id]
+                if view and view.message:
+                    # Update the embed to show the selected role
+                    embed = view.message.embeds[0]
+                    embed.description = f"Optionally, ping a role to be notified when ban alerts are received. " \
+                                       f"This can help ensure your moderation team is notified promptly.\n\n" \
+                                       f"**Example:** @Moderators\n\n" \
+                                       f"**Selected Role:** {role.mention}\n\n" \
+                                       f"You can skip this step if you don't want to ping any role."
+
+                    # Enable the continue button
+                    for child in view.children:
+                        if isinstance(child, RolePingButton):
+                            child.disabled = False
+
+                    # Update the message with the new embed and enabled button
+                    await view.message.edit(embed=embed, view=view)
 
                 # Acknowledge the role selection
                 await message.reply(f"Role {role.mention} will be pinged for ban alerts. Click the button to continue.")
@@ -417,6 +459,9 @@ class Systems(commands.Cog):
         # Mark this guild as having an active setup
         self.active_setups.add(ctx.guild.id)
 
+        # Store the user who started the setup
+        self.setup_owners[ctx.guild.id] = ctx.author.id
+
         # Create a blank slate for the setup wizard
         self.setup_data[ctx.guild.id] = {
             "alert_channel_id": None,
@@ -497,6 +542,14 @@ class NewSetupView(discord.ui.View):
         if check is True:
             return
 
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.response.send_message(
+                "Only the user who started the setup can continue to the next step.",
+                ephemeral=True
+            )
+            return
+
         # Store the message reference for timeout handling
         self.message = interaction.message
 
@@ -544,6 +597,17 @@ class NewSetupView(discord.ui.View):
         # Mark this guild as no longer having an active setup
         if self.guild_id in self.cog.active_setups:
             self.cog.active_setups.remove(self.guild_id)
+
+        # Remove the setup owner
+        if self.guild_id in self.cog.setup_owners:
+            del self.cog.setup_owners[self.guild_id]
+
+        # Clean up channel and role ping views
+        if self.guild_id in self.cog.channel_ping_views:
+            del self.cog.channel_ping_views[self.guild_id]
+
+        if self.guild_id in self.cog.role_ping_views:
+            del self.cog.role_ping_views[self.guild_id]
 
         # Try to update the message to show that setup timed out
         if self.message:
@@ -624,6 +688,17 @@ class NewSetupView(discord.ui.View):
         # Mark this guild as no longer having an active setup
         if self.guild_id in self.cog.active_setups:
             self.cog.active_setups.remove(self.guild_id)
+
+        # Remove the setup owner
+        if self.guild_id in self.cog.setup_owners:
+            del self.cog.setup_owners[self.guild_id]
+
+        # Clean up channel and role ping views
+        if self.guild_id in self.cog.channel_ping_views:
+            del self.cog.channel_ping_views[self.guild_id]
+
+        if self.guild_id in self.cog.role_ping_views:
+            del self.cog.role_ping_views[self.guild_id]
 
         # Add a dashboard button for easy access
         view = discord.ui.View()
@@ -735,6 +810,14 @@ class SkipButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.response.send_message(
+                "Only the user who started the setup can skip this step.",
+                ephemeral=True
+            )
+            return
+
         # Store the message reference for timeout handling
         self.view.message = interaction.message
 
@@ -754,6 +837,14 @@ class EnableButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.response.send_message(
+                "Only the user who started the setup can enable auto-ban.",
+                ephemeral=True
+            )
+            return
+
         # Save auto-ban setting
         self.cog.setup_data[self.guild_id]["auto_ban"] = True
 
@@ -776,6 +867,14 @@ class DisableButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.response.send_message(
+                "Only the user who started the setup can disable auto-ban.",
+                ephemeral=True
+            )
+            return
+
         # Save auto-ban setting
         self.cog.setup_data[self.guild_id]["auto_ban"] = False
 
@@ -795,13 +894,22 @@ class ChannelPingButton(discord.ui.Button):
         self.guild_id = guild_id
 
         super().__init__(
-            label="I've pinged the channel",
+            label="Continue",
             style=discord.ButtonStyle.primary,
             emoji="✅",
-            custom_id="channel_ping_button"
+            custom_id="channel_ping_button",
+            disabled=True  # Button starts disabled until a channel is pinged
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.response.send_message(
+                "Only the user who started the setup can continue to the next step.",
+                ephemeral=True
+            )
+            return
+
         # Check if we've received a channel ping
         if self.guild_id in self.cog.setup_data and "alert_channel_id" in self.cog.setup_data[self.guild_id]:
             # Store the message reference for timeout handling
@@ -826,13 +934,22 @@ class RolePingButton(discord.ui.Button):
         self.guild_id = guild_id
 
         super().__init__(
-            label="I've pinged the role",
+            label="Continue",
             style=discord.ButtonStyle.primary,
             emoji="✅",
-            custom_id="role_ping_button"
+            custom_id="role_ping_button",
+            disabled=True  # Button starts disabled until a role is pinged
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.response.send_message(
+                "Only the user who started the setup can continue to the next step.",
+                ephemeral=True
+            )
+            return
+
         # Check if we've received a role ping
         if self.guild_id in self.cog.setup_data and "ping_role_id" in self.cog.setup_data[self.guild_id]:
             # Store the message reference for timeout handling
@@ -879,6 +996,14 @@ class PrefixSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.response.send_message(
+                "Only the user who started the setup can select a prefix.",
+                ephemeral=True
+            )
+            return
+
         # Save selected prefix
         selected_prefix = self.values[0]
 

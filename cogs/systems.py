@@ -2,6 +2,7 @@ from discord.ext import commands
 import aiosqlite
 import json
 from discord.ext.bridge import bridge_command
+from discord.ext.commands import command
 from ezcord import discord
 from ezcord.internal.dc import slash_command
 
@@ -23,9 +24,8 @@ async def preChecks(ctx_or_interaction):
             )
             print(f"Locked - {user_id}")
         else:
-            await ctx_or_interaction.respond(
+            await ctx_or_interaction.send(
                 embed=discord.Embed(description=message, color=discord.Color.yellow()),
-                ephemeral=True,
                 delete_after=5
             )
             print(f"Locked - {user_id}")
@@ -140,7 +140,7 @@ class Systems(commands.Cog):
             )
             await db.commit()
 
-    @bridge_command(name="help", description="Shows help menu with features and commands")
+    @command(name="help", description="Shows help menu with features and commands")
     @commands.guild_only()
     async def help(self, ctx):
         check = await preChecks(ctx)
@@ -181,9 +181,9 @@ class Systems(commands.Cog):
 
         embed.set_footer(text="For more help, contact the bot owner")
 
-        await ctx.respond(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, delete_after=30)
 
-    @bridge_command(name="ping", description="Shows bot latency")
+    @command(name="ping", description="Shows bot latency")
     async def ping(self, ctx):
         check = await preChecks(ctx)
         if check is True:
@@ -196,9 +196,9 @@ class Systems(commands.Cog):
             color=discord.Color.green()
         )
 
-        await ctx.respond(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, delete_after=15)
 
-    @bridge_command(name="prefix", description="Shows or sets custom prefix")
+    @command(name="prefix", description="Shows or sets custom prefix")
     @commands.guild_only()
     async def prefix(self, ctx, new_prefix: str = None):
         check = await preChecks(ctx)
@@ -236,12 +236,12 @@ class Systems(commands.Cog):
                 color=discord.Color.blue()
             )
 
-            await ctx.respond(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed, delete_after=30)
             return
 
         # Check if user has admin permissions to set prefix
         if not ctx.author.guild_permissions.administrator:
-            await ctx.respond("You need administrator permissions to change the prefix.", ephemeral=True)
+            await ctx.send("You need administrator permissions to change the prefix.", delete_after=10)
             return
 
         # Update the prefix in the database
@@ -281,7 +281,7 @@ class Systems(commands.Cog):
             color=discord.Color.green()
         )
 
-        await ctx.respond(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, delete_after=30)
 
     @slash_command(name="setup", description="Configure LinkBot for your server")
     @commands.guild_only()

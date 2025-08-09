@@ -68,7 +68,8 @@ bot = ezcord.BridgeBot(
     help_command=None,
     ready_event=None,
     ignored_errors=[commands.CommandOnCooldown, commands.MissingPermissions],
-    error_webhook_url=os.getenv("d")
+    error_webhook_url=os.getenv("d"),
+    sync_commands_debug=True
 )
 
 

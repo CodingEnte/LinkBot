@@ -60,10 +60,18 @@ async def get_prefix(bot, message):
             except (json.JSONDecodeError, TypeError):
                 return default_prefix
 
+# Function to update bot's activity with current server count
+async def update_activity(bot_instance):
+    server_count = len(bot_instance.guilds)
+    activity = discord.Streaming(
+        name=f"Protecting {server_count} Servers",
+        url="https://www.twitch.tv/discord"  # Required for streaming status
+    )
+    await bot_instance.change_presence(activity=activity)
+
 bot = ezcord.BridgeBot(
     intents=intents,
-    status=discord.Status.streaming,
-    activity=discord.CustomActivity(name="Protecting {SERVERS} Servers"),
+    status=discord.Status.online,  # Initial status, will be updated with streaming activity
     command_prefix=get_prefix,
     help_command=None,
     ready_event=None,
@@ -108,9 +116,17 @@ async def on_command_error(ctx, error):
         print(f"[ERROR] {error} in command: {ctx.command}")
 
 @bot.event
+async def on_guild_join(guild):
+    """Event handler for when the bot joins a new guild.
+    Updates the bot's activity with the new server count."""
+    # Update bot activity with new server count
+    await update_activity(bot)
+    print(f"Bot joined {guild.name} (ID: {guild.id}). Updated server count in activity.")
+
+@bot.event
 async def on_guild_remove(guild):
     """Event handler for when the bot is removed from a guild.
-    Removes all data for that guild from the database."""
+    Removes all data for that guild from the database and updates the bot's activity."""
     async with aiosqlite.connect("database.db") as db:
         # Remove server from servers table
         await db.execute("DELETE FROM servers WHERE server_id = ?", (guild.id,))
@@ -120,6 +136,9 @@ async def on_guild_remove(guild):
 
         await db.commit()
 
+    # Update bot activity with new server count
+    await update_activity(bot)
+
     print(f"Bot was removed from {guild.name} (ID: {guild.id}). All data for this server has been removed.")
 
 @bot.event
@@ -128,6 +147,9 @@ async def on_ready():
     bot.cog_instances = {}
     for cog_name, cog in bot.cogs.items():
         bot.cog_instances[cog_name] = cog
+
+    # Update bot activity with current server count
+    await update_activity(bot)
 
     execute_directory = os.getcwd()
     cogs_directory = os.path.join(execute_directory, 'cogs')

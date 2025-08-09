@@ -128,10 +128,61 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_guild_join(guild):
-    """Bot joined a new server! Update our server count."""
+    """Bot joined a new server! Update our server count and send welcome DM to owner."""
     # Gotta keep that status message up-to-date
     await update_activity(bot)
     print(f"Bot joined {guild.name} (ID: {guild.id}). Updated server count in activity.")
+
+    # Send welcome DM to server owner
+    if guild.owner:
+        try:
+            embeds = [
+                discord.Embed(
+                    color=16711753,
+                )
+                .set_image(url="https://i.postimg.cc/jdzHnsPY/Banner.png"),
+                discord.Embed(
+                    color=16711753,
+                    description=f"# Thank You!\n**Hi {guild.owner.mention} for adding <:LinkLogo:1403487277388398683> __LinkBot__ to *{guild.name}***\n—",
+                )
+                .set_author(
+                    name="CrafEnte - LinkBot Developer",
+                    url="https://entes-portfolio.fly.dev",
+                    icon_url="https://i.postimg.cc/g2zYyDXk/CELP-gif.gif",
+                )
+                .set_image(url="https://i.postimg.cc/RFKpH1jd/Def-Banner.png")
+                .add_field(
+                    name="What LinkBot Does",
+                    value="LinkBot connects multiple Discord servers to share ban alerts, allowing servers to ban and prevent raids before the raiders can even join the server.",
+                    inline=False,
+                )
+                .add_field(
+                    name="How LinkBot Does That",
+                    value="LinkBot collects data of bans from all the servers it was added and set up in to detect raiders, ToS breakers, racist people etc. to send alerts to you and all other server, eliminating threats immediatly.",
+                    inline=False,
+                )
+                .add_field(
+                    name="Setting Up LinkBot",
+                    value="LinkBot Can easely be set up by just using the **/setup** command. Everything else will be explained in the setup tutorial. It's just a few clicks to save and protect your server.",
+                    inline=False,
+                ),
+                discord.Embed(
+                    color=16711753,
+                    description="## Important Links\n`-` [Support Server](<https://discord.gg/UW5xba89nM>)\n`-` [Ente's Portfolio](https://entes-portfolio.fly.dev)\n",
+                )
+                .set_image(url="https://i.postimg.cc/RFKpH1jd/Def-Banner.png")
+                .set_footer(
+                    text="Link Bot Systems - Thank You For Adding Me!",
+                    icon_url="https://i.postimg.cc/MHgQMLKT/Logo.png",
+                ),
+            ]
+
+            await guild.owner.send(embeds=embeds, content=guild.owner.mention)
+            print(f"Sent welcome DM to {guild.owner.name}#{guild.owner.discriminator} (ID: {guild.owner.id})")
+        except discord.Forbidden:
+            print(f"Could not send DM to {guild.owner.name}#{guild.owner.discriminator} (ID: {guild.owner.id}) - DMs disabled")
+        except Exception as e:
+            print(f"Error sending DM to server owner: {e}")
 
 @bot.event
 async def on_guild_remove(guild):

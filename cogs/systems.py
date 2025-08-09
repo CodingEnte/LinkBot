@@ -194,7 +194,14 @@ class Systems(commands.Cog):
                                     child.disabled = False
 
                             # Update the message with the new embed and enabled button
-                            await view.message.edit(embed=embed, view=view)
+                            try:
+                                await view.message.edit(embed=embed, view=view)
+                            except discord.NotFound:
+                                # Message might no longer exist or be accessible
+                                print(f"Could not edit message for guild {message.guild.id} - message not found")
+                            except Exception as e:
+                                # Log any other errors that might occur
+                                print(f"Error editing message for guild {message.guild.id}: {e}")
 
                     # Send confirmation message
                     await message.reply(f"#{channel.name} was saved. Return to the setup panel to continue or ping the bot in a different channel to update your choice.")
@@ -237,7 +244,14 @@ class Systems(commands.Cog):
                             child.disabled = False
 
                     # Update the message with the new embed and enabled button
-                    await view.message.edit(embed=embed, view=view)
+                    try:
+                        await view.message.edit(embed=embed, view=view)
+                    except discord.NotFound:
+                        # Message might no longer exist or be accessible
+                        print(f"Could not edit message for guild {message.guild.id} - message not found")
+                    except Exception as e:
+                        # Log any other errors that might occur
+                        print(f"Error editing message for guild {message.guild.id}: {e}")
 
                 # Acknowledge the channel selection
                 await message.reply(f"Channel {channel.mention} has been selected for ban alerts. Click the button to continue.")
@@ -267,7 +281,14 @@ class Systems(commands.Cog):
                             child.disabled = False
 
                     # Update the message with the new embed and enabled button
-                    await view.message.edit(embed=embed, view=view)
+                    try:
+                        await view.message.edit(embed=embed, view=view)
+                    except discord.NotFound:
+                        # Message might no longer exist or be accessible
+                        print(f"Could not edit message for guild {message.guild.id} - message not found")
+                    except Exception as e:
+                        # Log any other errors that might occur
+                        print(f"Error editing message for guild {message.guild.id}: {e}")
 
                 # Acknowledge the role selection
                 await message.reply(f"Role {role.mention} will be pinged for ban alerts. Click the button to continue.")
@@ -520,8 +541,7 @@ class Systems(commands.Cog):
         # Show the first setup screen
         await ctx.respond(
             embed=embed, 
-            view=NewSetupView(self.bot, step=1, skipable=skippable, message=None, cog=self, guild_id=ctx.guild.id), 
-            ephemeral=True
+            view=NewSetupView(self.bot, step=1, skipable=skippable, message=None, cog=self, guild_id=ctx.guild.id)
         )
 
 

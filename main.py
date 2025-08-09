@@ -1,8 +1,10 @@
 import difflib
+import json
 import logging
 import os
 from datetime import datetime
 
+import aiosqlite
 import discord
 import ezcord
 from colorama import Fore, Style
@@ -33,13 +35,37 @@ status_map = {
     "invisible": discord.Status.invisible,
 }
 
+async def get_prefix(bot, message):
+    # Default prefix
+    default_prefix = "-"
+
+    # If DM channel, return default prefix
+    if message.guild is None:
+        return default_prefix
+
+    # Get prefix from database
+    async with aiosqlite.connect("database.db") as db:
+        async with db.execute(
+            "SELECT preferences FROM servers WHERE server_id = ?",
+            (message.guild.id,)
+        ) as cursor:
+            data = await cursor.fetchone()
+
+            if not data:
+                return default_prefix
+
+            try:
+                preferences = json.loads(data[0])
+                return preferences.get("prefix", default_prefix)
+            except (json.JSONDecodeError, TypeError):
+                return default_prefix
+
 bot = ezcord.BridgeBot(
     intents=intents,
     status=discord.Status.streaming,
     activity=discord.CustomActivity(name="Protecting {SERVERS} Servers"),
-    command_prefix="-",
+    command_prefix=get_prefix,
     help_command=None,
-    debug_guilds=[1092933132191268906, 1384051278446989312],
     ready_event=None,
     ignored_errors=[commands.CommandOnCooldown, commands.MissingPermissions],
     error_webhook_url=os.getenv("d")
@@ -79,6 +105,21 @@ async def on_command_error(ctx, error):
             delete_after=5,
         )
         print(f"[ERROR] {error} in command: {ctx.command}")
+
+@bot.event
+async def on_guild_remove(guild):
+    """Event handler for when the bot is removed from a guild.
+    Removes all data for that guild from the database."""
+    async with aiosqlite.connect("database.db") as db:
+        # Remove server from servers table
+        await db.execute("DELETE FROM servers WHERE server_id = ?", (guild.id,))
+
+        # Remove any bans associated with this server
+        await db.execute("DELETE FROM bans WHERE origin_server_id = ?", (guild.id,))
+
+        await db.commit()
+
+    print(f"Bot was removed from {guild.name} (ID: {guild.id}). All data for this server has been removed.")
 
 @bot.event
 async def on_ready():

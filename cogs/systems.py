@@ -44,43 +44,55 @@ NewSetupPages = {
             value="Before LinkBot can start protecting your server you will need to complete a small setup. Follow the steps to set up LinkBot."
         )
         .set_footer(
-            text="LinkBot setup | 1/4"
+            text="LinkBot setup | 1/5"
         ),
         "skippable": False,
         "type": "info"
     },
     "Step2": {
         "embed": discord.Embed(
+            title="Command Prefix",
+            description="Please select a prefix for bot commands in this server. "
+                        "This prefix will be used for text commands (e.g. `{prefix}help`)."
+        )
+        .set_footer(
+            text="LinkBot setup | 2/5"
+        ),
+        "skippable": False,
+        "type": "prefix_select"
+    },
+    "Step3": {
+        "embed": discord.Embed(
             title="Alert Channel",
             description="Please select a channel where ban alerts from other servers will be sent. "
                         "This should be a channel that your moderators can access."
         )
         .set_footer(
-            text="LinkBot setup | 2/4"
+            text="LinkBot setup | 3/5"
         ),
         "skippable": False,
         "type": "channel_select"
     },
-    "Step3": {
+    "Step4": {
         "embed": discord.Embed(
             title="Ping Role",
             description="Optionally, select a role to ping when ban alerts are received. "
                         "This can help ensure your moderation team is notified promptly."
         )
         .set_footer(
-            text="LinkBot setup | 3/4"
+            text="LinkBot setup | 4/5"
         ),
         "skippable": True,
         "type": "role_select"
     },
-    "Step4": {
+    "Step5": {
         "embed": discord.Embed(
             title="Auto-Ban Setting",
             description="Would you like to enable auto-ban for servers with integrity score ≥ 50? "
                         "If enabled, users banned from high-integrity servers will be automatically banned here."
         )
         .set_footer(
-            text="LinkBot setup | 4/4"
+            text="LinkBot setup | 5/5"
         ),
         "skippable": False,
         "type": "toggle"
@@ -279,11 +291,59 @@ class Systems(commands.Cog):
         if check is True:
             return
 
+        # Check if server is already set up
+        async with aiosqlite.connect("database.db") as db:
+            async with db.execute(
+                "SELECT preferences FROM servers WHERE server_id = ?",
+                (ctx.guild.id,)
+            ) as cursor:
+                data = await cursor.fetchone()
+
+                if data:
+                    # Server already exists in database
+                    try:
+                        preferences = json.loads(data[0])
+                        if preferences.get("alert_channel_id"):
+                            # Server is already set up, redirect to dashboard
+                            embed = discord.Embed(
+                                title="Server Already Set Up",
+                                description="This server has already been set up. Use the dashboard to update your settings.",
+                                color=discord.Color.blue()
+                            )
+
+                            # Create a button to open the dashboard
+                            view = discord.ui.View()
+                            dashboard_button = discord.ui.Button(
+                                label="Open Dashboard",
+                                style=discord.ButtonStyle.primary,
+                                emoji="⚙️"
+                            )
+
+                            async def dashboard_callback(interaction):
+                                # Get dashboard cog
+                                dashboard_cog = self.bot.get_cog("Dashboard")
+                                if dashboard_cog:
+                                    await dashboard_cog.dashboard(interaction)
+                                else:
+                                    await interaction.response.send_message(
+                                        "Dashboard is not available. Please try again later.",
+                                        ephemeral=True
+                                    )
+
+                            dashboard_button.callback = dashboard_callback
+                            view.add_item(dashboard_button)
+
+                            await ctx.respond(embed=embed, view=view, ephemeral=True)
+                            return
+                    except (json.JSONDecodeError, TypeError):
+                        pass  # Continue with setup if preferences are invalid
+
         # Initialize setup data for this guild
         self.setup_data[ctx.guild.id] = {
             "alert_channel_id": None,
             "ping_role_id": None,
-            "auto_ban": False
+            "auto_ban": False,
+            "preferences": {}
         }
 
         # Start with Step 1
@@ -320,7 +380,9 @@ class NewSetupView(discord.ui.View):
             self.remove_item(self.children[0])  # Remove continue button
 
         # Add appropriate components based on step type
-        if step_type == "channel_select":
+        if step_type == "prefix_select":
+            self.add_item(PrefixSelect(self.cog, self.guild_id))
+        elif step_type == "channel_select":
             self.add_item(ChannelSelect(self.cog, self.guild_id))
         elif step_type == "role_select":
             self.add_item(RoleSelect(self.cog, self.guild_id))
@@ -372,12 +434,16 @@ class NewSetupView(discord.ui.View):
         # Get setup data for this guild
         setup_data = self.cog.setup_data.get(self.guild_id, {})
 
+        # Get preferences from setup data if they exist
+        setup_preferences = setup_data.get("preferences", {})
+
         # Create preferences JSON
         preferences = {
             "alert_channel_id": setup_data.get("alert_channel_id"),
             "ping_role_id": setup_data.get("ping_role_id"),
             "auto_ban": setup_data.get("auto_ban", False),
-            "blocked_servers": []  # Initialize empty list for blocked servers
+            "blocked_servers": [],  # Initialize empty list for blocked servers
+            "prefix": setup_preferences.get("prefix", "-")  # Get prefix from setup preferences or use default
         }
 
         # Save to database
@@ -413,16 +479,44 @@ class NewSetupView(discord.ui.View):
             inline=False
         )
 
-        embed.set_footer(text="You can run /setup again at any time to change these settings.")
+        embed.add_field(
+            name="Prefix", 
+            value=f"`{preferences['prefix']}`",
+            inline=False
+        )
+
+        embed.set_footer(text="Use /dashboard to update your settings in the future.")
 
         # Clear setup data
         if self.guild_id in self.cog.setup_data:
             del self.cog.setup_data[self.guild_id]
 
+        # Create a button to open the dashboard
+        view = discord.ui.View()
+        dashboard_button = discord.ui.Button(
+            label="Open Dashboard",
+            style=discord.ButtonStyle.primary,
+            emoji="⚙️"
+        )
+
+        async def dashboard_callback(button_interaction):
+            # Get dashboard cog
+            dashboard_cog = self.bot.get_cog("Dashboard")
+            if dashboard_cog:
+                await dashboard_cog.dashboard(button_interaction)
+            else:
+                await button_interaction.response.send_message(
+                    "Dashboard is not available. Please try again later.",
+                    ephemeral=True
+                )
+
+        dashboard_button.callback = dashboard_callback
+        view.add_item(dashboard_button)
+
         if interaction.response.is_done():
-            await interaction.message.edit(embed=embed, view=None)
+            await interaction.message.edit(embed=embed, view=view)
         else:
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message(embed=embed, view=view)
 
 class ChannelSelect(discord.ui.Select):
     def __init__(self, cog, guild_id: int):
@@ -537,6 +631,51 @@ class DisableButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         # Save auto-ban setting
         self.cog.setup_data[self.guild_id]["auto_ban"] = False
+
+        # Get parent view and advance to next step
+        parent_view = self.view
+        await parent_view.advance_step(interaction)
+
+
+class PrefixSelect(discord.ui.Select):
+    """Select menu for choosing a prefix during setup"""
+
+    def __init__(self, cog, guild_id: int):
+        self.cog = cog
+        self.guild_id = guild_id
+
+        # Available prefixes
+        prefixes = ["!", ":", ".", ",", "-", "?", ";", "*"]
+
+        # Create options for all available prefixes
+        options = [
+            discord.SelectOption(
+                label=prefix,
+                value=prefix,
+                description=f"Set {prefix} as the command prefix",
+                default=(prefix == "-")  # Default to "-"
+            )
+            for prefix in prefixes
+        ]
+
+        super().__init__(
+            placeholder="Select a command prefix",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="prefix_select"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Save selected prefix
+        selected_prefix = self.values[0]
+
+        # Initialize preferences if not already in setup_data
+        if "preferences" not in self.cog.setup_data[self.guild_id]:
+            self.cog.setup_data[self.guild_id]["preferences"] = {}
+
+        # Save prefix to setup data
+        self.cog.setup_data[self.guild_id]["preferences"]["prefix"] = selected_prefix
 
         # Get parent view and advance to next step
         parent_view = self.view

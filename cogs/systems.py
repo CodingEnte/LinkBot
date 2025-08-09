@@ -112,6 +112,7 @@ class Systems(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.setup_data = {}  # Temp storage during setup wizard
+        self.active_setups = set()  # Track guilds with active setup processes
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -317,6 +318,18 @@ class Systems(commands.Cog):
         if check is True:
             return
 
+        # Check if setup is already in progress for this guild
+        if ctx.guild.id in self.active_setups:
+            await ctx.respond(
+                embed=discord.Embed(
+                    title="Setup Already in Progress",
+                    description="Someone is already running the setup wizard for this server. Please wait for them to finish or try again later.",
+                    color=discord.Color.red()
+                ),
+                ephemeral=True
+            )
+            return
+
         # See if they've already run setup before
         async with aiosqlite.connect("database.db") as db:
             async with db.execute(
@@ -365,6 +378,9 @@ class Systems(commands.Cog):
                         # Something's wrong with their settings JSON - let them redo setup
                         pass
 
+        # Mark this guild as having an active setup
+        self.active_setups.add(ctx.guild.id)
+
         # Create a blank slate for the setup wizard
         self.setup_data[ctx.guild.id] = {
             "alert_channel_id": None,
@@ -394,7 +410,7 @@ class NewSetupView(discord.ui.View):
     """The interactive setup wizard with buttons and dropdowns"""
 
     def __init__(self, bot, step: int, skipable: bool, message, cog, guild_id: int):
-        super().__init__(timeout=None)  # No timeout - let them take their time
+        super().__init__(timeout=300)  # 5 minute timeout for each step
         self.bot = bot
         self.step = step
         self.skipable = skipable
@@ -432,6 +448,9 @@ class NewSetupView(discord.ui.View):
         if check is True:
             return
 
+        # Store the message reference for timeout handling
+        self.message = interaction.message
+
         # Move to the next step
         await self.advance_step(interaction)
 
@@ -466,6 +485,29 @@ class NewSetupView(discord.ui.View):
             await interaction.message.edit(embed=embed, view=new_view)
         else:
             await interaction.response.edit_message(embed=embed, view=new_view)
+
+    async def on_timeout(self):
+        """Handle timeout - clean up if the user abandons the setup process"""
+        # Clean up temporary data
+        if self.guild_id in self.cog.setup_data:
+            del self.cog.setup_data[self.guild_id]
+
+        # Mark this guild as no longer having an active setup
+        if self.guild_id in self.cog.active_setups:
+            self.cog.active_setups.remove(self.guild_id)
+
+        # Try to update the message to show that setup timed out
+        if self.message:
+            try:
+                embed = discord.Embed(
+                    title="Setup Timed Out",
+                    description="The setup process has timed out due to inactivity. Please run `/setup` again if you wish to continue.",
+                    color=discord.Color.red()
+                )
+                await self.message.edit(embed=embed, view=None)
+            except:
+                # If we can't edit the message, that's okay - the cleanup is the important part
+                pass
 
     async def save_preferences(self, interaction):
         """Save all the settings from the setup wizard to the database"""
@@ -530,6 +572,10 @@ class NewSetupView(discord.ui.View):
         if self.guild_id in self.cog.setup_data:
             del self.cog.setup_data[self.guild_id]
 
+        # Mark this guild as no longer having an active setup
+        if self.guild_id in self.cog.active_setups:
+            self.cog.active_setups.remove(self.guild_id)
+
         # Add a dashboard button for easy access
         view = discord.ui.View()
         dashboard_button = discord.ui.Button(
@@ -585,6 +631,9 @@ class ChannelSelect(discord.ui.Select):
         channel_id = int(self.values[0])
         self.cog.setup_data[self.guild_id]["alert_channel_id"] = channel_id
 
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
+
         # Get parent view and advance to next step
         parent_view = self.view
         await parent_view.advance_step(interaction)
@@ -617,6 +666,9 @@ class RoleSelect(discord.ui.Select):
         role_id = int(self.values[0])
         self.cog.setup_data[self.guild_id]["ping_role_id"] = role_id
 
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
+
         # Get parent view and advance to next step
         parent_view = self.view
         await parent_view.advance_step(interaction)
@@ -634,6 +686,9 @@ class SkipButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
+
         # Get parent view and advance to next step
         parent_view = self.view
         await parent_view.advance_step(interaction)
@@ -653,6 +708,9 @@ class EnableButton(discord.ui.Button):
         # Save auto-ban setting
         self.cog.setup_data[self.guild_id]["auto_ban"] = True
 
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
+
         # Get parent view and advance to next step
         parent_view = self.view
         await parent_view.advance_step(interaction)
@@ -671,6 +729,9 @@ class DisableButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         # Save auto-ban setting
         self.cog.setup_data[self.guild_id]["auto_ban"] = False
+
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
 
         # Get parent view and advance to next step
         parent_view = self.view
@@ -716,6 +777,9 @@ class PrefixSelect(discord.ui.Select):
 
         # Save prefix to setup data
         self.cog.setup_data[self.guild_id]["preferences"]["prefix"] = selected_prefix
+
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
 
         # Get parent view and advance to next step
         parent_view = self.view

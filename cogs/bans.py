@@ -50,6 +50,120 @@ class BanAlertView(discord.ui.View):
         self.cog = cog
         self.expiry_time = datetime.now() + timedelta(hours=24)  # For tracking when buttons should disable
 
+    @discord.ui.button(label="Accept", style=discord.ButtonStyle.green, emoji="✅", custom_id="accept_ban")
+    async def accept_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        # Check if the user has admin permissions
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
+            return
+
+        # Update the ban status and increase origin server's integrity
+        async with aiosqlite.connect("database.db") as db:
+            # Update ban status
+            await db.execute(
+                "UPDATE bans SET status = ? WHERE id = ?",
+                ("Accepted", self.ban_id)
+            )
+
+            # Increase origin server's integrity (max 100)
+            await db.execute(
+                """
+                UPDATE servers 
+                SET integrity = MIN(integrity + 1, 100) 
+                WHERE server_id = ?
+                """,
+                (self.origin_server_id,)
+            )
+
+            # Log the action
+            await db.execute(
+                """
+                INSERT INTO ban_actions (ban_id, action, by_user_id, timestamp)
+                VALUES (?, ?, ?, ?)
+                """,
+                (self.ban_id, "Accepted", interaction.user.id, datetime.now().timestamp())
+            )
+
+            await db.commit()
+
+        # Ban the user in this server
+        try:
+            await interaction.guild.ban(
+                discord.Object(id=self.user_id), 
+                reason=f"LinkBot: Ban accepted from server {self.origin_server_id}. Original reason: {self.ban_reason}"
+            )
+            success_msg = f"User <@{self.user_id}> has been banned in this server."
+        except discord.Forbidden:
+            success_msg = "I don't have permission to ban this user."
+        except discord.HTTPException:
+            success_msg = "Failed to ban the user. They may have already left or been banned."
+
+        # Disable all buttons
+        for item in self.children:
+            item.disabled = True
+
+        # Update the message
+        embed = interaction.message.embeds[0]
+        embed.add_field(name="Status", value=f"✅ Accepted by {interaction.user.mention}", inline=False)
+
+        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.send(success_msg, ephemeral=True)
+
+    @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.red, emoji="❌", custom_id="dismiss_ban")
+    async def dismiss_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        # Check if the user has admin permissions
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
+            return
+
+        # Update the ban status and decrease origin server's integrity
+        async with aiosqlite.connect("database.db") as db:
+            # Update ban status
+            await db.execute(
+                "UPDATE bans SET status = ? WHERE id = ?",
+                ("Dismissed", self.ban_id)
+            )
+
+            # Decrease origin server's integrity (min 0)
+            await db.execute(
+                """
+                UPDATE servers 
+                SET integrity = MAX(integrity - 1, 0) 
+                WHERE server_id = ?
+                """,
+                (self.origin_server_id,)
+            )
+
+            # Log the action
+            await db.execute(
+                """
+                INSERT INTO ban_actions (ban_id, action, by_user_id, timestamp)
+                VALUES (?, ?, ?, ?)
+                """,
+                (self.ban_id, "Dismissed", interaction.user.id, datetime.now().timestamp())
+            )
+
+            await db.commit()
+
+        # Disable all buttons
+        for item in self.children:
+            item.disabled = True
+
+        # Update the message
+        embed = interaction.message.embeds[0]
+        embed.add_field(name="Status", value=f"❌ Dismissed by {interaction.user.mention}", inline=False)
+
+        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.send("Ban alert dismissed.", ephemeral=True)
+
+    async def on_timeout(self):
+        # Disable all buttons when the view times out (after 24 hours)
+        for item in self.children:
+            item.disabled = True
+
+        # We can't update the message here since we don't have a reference to it
+        # This will be handled by a background task that checks for expired views
+
 class JoinAlertView(discord.ui.View):
     """UI with Ban/Dismiss buttons for when previously banned users join"""
 
@@ -284,9 +398,31 @@ class Bans(commands.Cog):
         if not ban_reason:
             return
 
+        # Ignore bans issued by the bot itself
+        if moderator_id == self.bot.user.id:
+            return
+
         # Check rate limit
         if not self.rate_limiter.can_send_alert(guild.id):
             return
+
+        # Check if an alert has already been sent for this user from this server recently
+        current_time = datetime.now().timestamp()
+        time_threshold = current_time - 300  # 5 minutes ago
+
+        async with aiosqlite.connect("database.db") as db:
+            async with db.execute(
+                """
+                SELECT id FROM bans 
+                WHERE user_id = ? AND origin_server_id = ? AND flagged_at > ?
+                """,
+                (user.id, guild.id, time_threshold)
+            ) as cursor:
+                existing_ban = await cursor.fetchone()
+
+            # If an alert has already been sent recently, ignore this ban
+            if existing_ban:
+                return
 
         # Record the ban in the database
         async with aiosqlite.connect("database.db") as db:
@@ -295,7 +431,7 @@ class Bans(commands.Cog):
                 INSERT INTO bans (user_id, origin_server_id, flagged_by, ban_reason, flagged_at, status)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (user.id, guild.id, moderator_id, ban_reason, datetime.now().timestamp(), "Pending")
+                (user.id, guild.id, moderator_id, ban_reason, current_time, "Pending")
             )
             ban_id = cursor.lastrowid
             await db.commit()

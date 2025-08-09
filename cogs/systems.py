@@ -12,7 +12,7 @@ async def preChecks(ctx_or_interaction):
     message = "🛠️ The bot is currently under maintenance. Try again later.\n-# More infos can be found in the [Developer News](https://discord.com/channels/1374742971244871732/1375587166419292251)"
 
     # 0 = bot is online, 1 = maintenance mode
-    lockState = 0
+    lockState = 1
 
     # Figure out if this is a slash command or text command
     is_interaction = isinstance(ctx_or_interaction, discord.Interaction)

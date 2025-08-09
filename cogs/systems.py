@@ -170,6 +170,15 @@ class Systems(commands.Cog):
             # Save the channel where the bot was mentioned
             channel = message.channel
 
+            # Check if dashboard has an active channel or role ping view (handled by Dashboard cog)
+            dashboard_cog = self.bot.get_cog("Dashboard")
+            if dashboard_cog and message.guild and (
+                message.guild.id in dashboard_cog.channel_ping_views or 
+                message.guild.id in dashboard_cog.role_ping_views
+            ):
+                # Let the Dashboard cog handle this message
+                return
+
             # Check if this guild has an active setup
             if message.guild and message.guild.id in self.active_setups:
                 # Check if the message is from the user who started the setup
@@ -208,9 +217,8 @@ class Systems(commands.Cog):
                 else:
                     # If not the setup owner, just acknowledge the ping
                     await message.reply("Only the user who started the setup can select a channel.")
-            else:
-                # If no active setup, just acknowledge the ping
-                await message.reply("There is no active setup in this server. Use `/setup` to start the setup process.")
+            # Don't send any message if there's no active setup
+            # This prevents confusion when users ping the bot for other reasons
 
             return
 

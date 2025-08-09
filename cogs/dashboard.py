@@ -36,6 +36,16 @@ class Dashboard(commands.Cog):
             # Save the channel where the bot was mentioned
             channel = message.channel
 
+            # Check if setup is active or if Systems cog has active role ping view
+            systems_cog = self.bot.get_cog("Systems")
+            if systems_cog and message.guild and (
+                message.guild.id in systems_cog.active_setups or
+                message.guild.id in systems_cog.role_ping_views or
+                message.guild.id in systems_cog.channel_ping_views
+            ):
+                # Let the Systems cog handle this message
+                return
+
             # Check if this guild has an active channel ping view
             if message.guild and message.guild.id in self.channel_ping_views:
                 # Save the channel ID
@@ -43,9 +53,8 @@ class Dashboard(commands.Cog):
 
                 # Send confirmation message
                 await message.reply(f"#{channel.name} was saved. Return to the dashboard panel to continue or ping the bot in a different channel to update your choice.")
-            else:
-                # If no active channel ping view, just acknowledge the ping
-                await message.reply("There is no active channel selection in progress. Use the dashboard to change your alert channel.")
+            # Don't send any message if there's no active channel selection
+            # This prevents confusion when users ping the bot for other reasons
 
             return
 

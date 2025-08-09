@@ -21,7 +21,7 @@ async def preChecks(ctx_or_interaction):
     user_id = ctx_or_interaction.user.id if is_interaction else ctx_or_interaction.author.id
 
     # If we're in maintenance mode and user isn't on the whitelist
-    if lockState == 1 and user_id not in [780865480038678528, 833825983895044146, 1287505614443905062]:
+    if lockState == 1 and user_id not in [780865480038678528,0]:
         if is_interaction:
             # For slash commands
             await ctx_or_interaction.response.send_message(

@@ -8,6 +8,8 @@ import aiosqlite
 import discord
 from discord.ext import commands, tasks
 
+from cogs.systems import preChecks
+
 class BanRateLimit:
     """Prevents servers from spamming ban alerts"""
 
@@ -52,6 +54,14 @@ class BanAlertView(discord.ui.View):
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.green, emoji="✅", custom_id="accept_ban")
     async def accept_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the user has admin permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
@@ -111,6 +121,14 @@ class BanAlertView(discord.ui.View):
 
     @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.red, emoji="❌", custom_id="dismiss_ban")
     async def dismiss_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the user has admin permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
@@ -176,6 +194,14 @@ class JoinAlertView(discord.ui.View):
 
     @discord.ui.button(label="Ban", style=discord.ButtonStyle.red, emoji="🔨", custom_id="ban_user")
     async def ban_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the user has admin permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
@@ -210,6 +236,14 @@ class JoinAlertView(discord.ui.View):
 
     @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.green, emoji="✓", custom_id="dismiss_join_alert")
     async def dismiss_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the user has admin permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
@@ -581,6 +615,11 @@ class Bans(commands.Cog):
 
     @commands.slash_command(name="search", description="Search for a user's ban history")
     async def search(self, ctx, user: discord.User):
+        # Check if we're in maintenance mode
+        check = await preChecks(ctx)
+        if check is True:
+            return
+
         # Check if the command is used in a guild
         if not ctx.guild:
             await ctx.respond("This command can only be used in a server.", ephemeral=True)
@@ -635,6 +674,11 @@ class Bans(commands.Cog):
     @commands.slash_command(name="flag", description="Flag a user for review by LinkBot owner")
     @commands.has_permissions(administrator=True)
     async def flag(self, ctx, user: discord.User, reason: str, proof_url: str = None):
+        # Check if we're in maintenance mode
+        check = await preChecks(ctx)
+        if check is True:
+            return
+
         # Check if the command is used in a guild
         if not ctx.guild:
             await ctx.respond("This command can only be used in a server.", ephemeral=True)

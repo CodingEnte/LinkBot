@@ -488,7 +488,7 @@ class Systems(commands.Cog):
                 data = await cursor.fetchone()
 
                 if data:
-                    # They're in our database already
+                    # They're in da database already
                     try:
                         preferences = json.loads(data[0])
                         if preferences.get("alert_channel_id"):
@@ -821,6 +821,14 @@ class ChannelSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Save selected channel
         channel_id = int(self.values[0])
         self.cog.setup_data[self.guild_id]["alert_channel_id"] = channel_id
@@ -856,6 +864,14 @@ class RoleSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Save selected role
         role_id = int(self.values[0])
         self.cog.setup_data[self.guild_id]["ping_role_id"] = role_id
@@ -880,9 +896,17 @@ class SkipButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the interaction is from the user who started the setup
         if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Only the user who started the setup can skip this step.",
                 ephemeral=True
             )
@@ -907,9 +931,17 @@ class EnableButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the interaction is from the user who started the setup
         if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Only the user who started the setup can enable auto-ban.",
                 ephemeral=True
             )
@@ -937,9 +969,17 @@ class DisableButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the interaction is from the user who started the setup
         if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Only the user who started the setup can disable auto-ban.",
                 ephemeral=True
             )
@@ -972,9 +1012,17 @@ class ChannelPingButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the interaction is from the user who started the setup
         if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Only the user who started the setup can continue to the next step.",
                 ephemeral=True
             )
@@ -990,7 +1038,7 @@ class ChannelPingButton(discord.ui.Button):
             await parent_view.advance_step(interaction)
         else:
             # No channel ping received yet
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Please ping a channel first by typing `#channel-name` in the chat.",
                 ephemeral=True
             )
@@ -1012,9 +1060,17 @@ class RolePingButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the interaction is from the user who started the setup
         if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Only the user who started the setup can continue to the next step.",
                 ephemeral=True
             )
@@ -1030,7 +1086,7 @@ class RolePingButton(discord.ui.Button):
             await parent_view.advance_step(interaction)
         else:
             # No role ping received yet
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Please ping a role first by typing `@role-name` in the chat, or click Skip if you don't want to ping any role.",
                 ephemeral=True
             )
@@ -1066,9 +1122,17 @@ class PrefixSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
         # Check if the interaction is from the user who started the setup
         if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Only the user who started the setup can select a prefix.",
                 ephemeral=True
             )

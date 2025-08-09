@@ -6,6 +6,7 @@ import discord
 from discord.ext import commands
 from discord.ext.bridge import bridge_command
 from ezcord.internal.dc import slash_command
+
 from cogs.systems import preChecks
 
 class Dashboard(commands.Cog):
@@ -180,6 +181,9 @@ class DashboardView(discord.ui.View):
     @discord.ui.button(label="Change Alert Channel", style=discord.ButtonStyle.primary, emoji="📢", row=1)
     async def change_alert_channel(self, button: discord.ui.Button, interaction: discord.Interaction):
         """Opens the channel ping view when clicked"""
+        check = await preChecks(interaction)
+        if check is True:
+            return
         await interaction.response.send_message(
             "Please ping the channel where you want ban alerts to be sent.\n\n**Example:** #alerts",
             view=AlertChannelPingView(self.bot, self.guild_id, self.preferences),
@@ -189,6 +193,9 @@ class DashboardView(discord.ui.View):
     @discord.ui.button(label="Change Ping Role", style=discord.ButtonStyle.primary, emoji="🔔", row=1)
     async def change_ping_role(self, button: discord.ui.Button, interaction: discord.Interaction):
         """Shows the role ping view"""
+        check = await preChecks(interaction)
+        if check is True:
+            return
         await interaction.response.send_message(
             "Please ping the role you want to be notified for ban alerts.\n\n**Example:** @Moderators\n\nYou can also remove the ping role by clicking the Remove button.",
             view=PingRolePingView(self.bot, self.guild_id, self.preferences),
@@ -203,6 +210,9 @@ class DashboardView(discord.ui.View):
     )
     async def toggle_auto_ban(self, button: discord.ui.Button, interaction: discord.Interaction):
         """Flips the auto-ban setting on/off and changes button color"""
+        check = await preChecks(interaction)
+        if check is True:
+            return
         # Flip the setting to its opposite
         current_setting = self.preferences.get("auto_ban", False)
         self.preferences["auto_ban"] = not current_setting
@@ -285,6 +295,9 @@ class PrefixSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         """Handles when someone picks a new prefix"""
+        check = await preChecks(interaction)
+        if check is True:
+            return
         # Grab what they selected
         selected_prefix = self.values[0]
 
@@ -376,6 +389,9 @@ class AlertChannelConfirmButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         """Check if a channel has been pinged and save it"""
+        check = await preChecks(interaction)
+        if check is True:
+            return
         dashboard_cog = self.bot.cog_instances["Dashboard"]
 
         # Check if we've received a channel ping for this guild
@@ -452,6 +468,9 @@ class PingRoleConfirmButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         """Check if a role has been pinged and save it"""
+        check = await preChecks(interaction)
+        if check is True:
+            return
         dashboard_cog = self.bot.cog_instances["Dashboard"]
 
         # Check if we've received a role ping for this guild
@@ -505,6 +524,9 @@ class RemovePingRoleButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         """Remove the ping role"""
+        check = await preChecks(interaction)
+        if check is True:
+            return
         dashboard_cog = self.bot.cog_instances["Dashboard"]
 
         # Remove the ping role from preferences

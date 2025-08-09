@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 from discord.ext.bridge import bridge_command
 from ezcord.internal.dc import slash_command
-from cogs.system import preChecks
+from cogs.systems import preChecks
 
 class Dashboard(commands.Cog):
     """The server settings dashboard (admin only)"""

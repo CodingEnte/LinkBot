@@ -12,7 +12,7 @@ async def preChecks(ctx_or_interaction):
     message = "🛠️ The bot is currently under maintenance. Try again later.\n-# The LinkBot team is aware of the issue in the setup when selecting a channel. We are working on a solution and will deploy it as soon as possible. Please reach out at our [developer's portfolio](<https://entes-portfolio.fly.dev>)"
 
     # 0 = bot is online, 1 = maintenance mode
-    lockState = 1
+    lockState = 0
 
     # Figure out if this is a slash command or text command
     is_interaction = isinstance(ctx_or_interaction, discord.Interaction)

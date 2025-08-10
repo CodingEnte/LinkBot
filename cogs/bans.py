@@ -64,7 +64,7 @@ class BanAlertView(discord.ui.View):
 
         # Check if the user has admin permissions
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
+            await interaction.followup.send("You need administrator permissions to use this button.", ephemeral=True)
             return
 
         # Update the ban status and increase origin server's integrity
@@ -116,7 +116,7 @@ class BanAlertView(discord.ui.View):
         embed = interaction.message.embeds[0]
         embed.add_field(name="Status", value=f"✅ Accepted by {interaction.user.mention}", inline=False)
 
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.edit_original_response(embed=embed, view=self)
         await interaction.followup.send(success_msg, ephemeral=True)
 
     @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.red, emoji="❌", custom_id="dismiss_ban")
@@ -131,7 +131,7 @@ class BanAlertView(discord.ui.View):
 
         # Check if the user has admin permissions
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
+            await interaction.followup.send("You need administrator permissions to use this button.", ephemeral=True)
             return
 
         # Update the ban status and decrease origin server's integrity
@@ -171,7 +171,7 @@ class BanAlertView(discord.ui.View):
         embed = interaction.message.embeds[0]
         embed.add_field(name="Status", value=f"❌ Dismissed by {interaction.user.mention}", inline=False)
 
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.edit_original_response(embed=embed, view=self)
         await interaction.followup.send("Ban alert dismissed.", ephemeral=True)
 
     async def on_timeout(self):
@@ -204,7 +204,7 @@ class JoinAlertView(discord.ui.View):
 
         # Check if the user has admin permissions
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
+            await interaction.followup.send("You need administrator permissions to use this button.", ephemeral=True)
             return
 
         # Ban the user in this server
@@ -231,7 +231,7 @@ class JoinAlertView(discord.ui.View):
         embed = interaction.message.embeds[0]
         embed.add_field(name="Status", value=f"🔨 Banned by {interaction.user.mention}", inline=False)
 
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.edit_original_response(embed=embed, view=self)
         await interaction.followup.send(success_msg, ephemeral=True)
 
     @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.green, emoji="✓", custom_id="dismiss_join_alert")
@@ -246,7 +246,7 @@ class JoinAlertView(discord.ui.View):
 
         # Check if the user has admin permissions
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("You need administrator permissions to use this button.", ephemeral=True)
+            await interaction.followup.send("You need administrator permissions to use this button.", ephemeral=True)
             return
 
         # Disable all buttons
@@ -257,7 +257,7 @@ class JoinAlertView(discord.ui.View):
         embed = interaction.message.embeds[0]
         embed.add_field(name="Status", value=f"✓ Dismissed by {interaction.user.mention}", inline=False)
 
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.edit_original_response(embed=embed, view=self)
         await interaction.followup.send("Alert dismissed. No action taken against the user.", ephemeral=True)
 
     async def on_timeout(self):
@@ -440,11 +440,12 @@ class Bans(commands.Cog):
         if not self.rate_limiter.can_send_alert(guild.id):
             return
 
-        # Check if an alert has already been sent for this user from this server recently
+        # Check if an alert has already been sent for this user from any server recently
         current_time = datetime.now().timestamp()
         time_threshold = current_time - 300  # 5 minutes ago
 
         async with aiosqlite.connect("database.db") as db:
+            # First check if an alert has already been sent for this user from this server recently
             async with db.execute(
                 """
                 SELECT id FROM bans 
@@ -452,10 +453,24 @@ class Bans(commands.Cog):
                 """,
                 (user.id, guild.id, time_threshold)
             ) as cursor:
-                existing_ban = await cursor.fetchone()
+                existing_ban_from_this_server = await cursor.fetchone()
 
-            # If an alert has already been sent recently, ignore this ban
-            if existing_ban:
+            # If an alert has already been sent from this server recently, ignore this ban
+            if existing_ban_from_this_server:
+                return
+
+            # Then check if an alert has already been sent for this user from any server recently
+            async with db.execute(
+                """
+                SELECT id FROM bans 
+                WHERE user_id = ? AND flagged_at > ?
+                """,
+                (user.id, time_threshold)
+            ) as cursor:
+                existing_ban_from_any_server = await cursor.fetchone()
+
+            # If an alert has already been sent from any server recently, ignore this ban
+            if existing_ban_from_any_server:
                 return
 
         # Record the ban in the database

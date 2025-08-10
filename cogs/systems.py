@@ -60,7 +60,8 @@ NewSetupPages = {
         "embed": discord.Embed(
             title="Command Prefix",
             description="Please select a prefix for bot commands in this server. "
-                        "This prefix will be used for text commands (e.g. `{prefix}help`)."
+                        "This prefix will be used for text commands (e.g. `{prefix}help`).\n\n"
+                        "**Default:** `-`"
         )
         .set_footer(
             text="LinkBot setup | 2/5"
@@ -99,7 +100,8 @@ NewSetupPages = {
         "embed": discord.Embed(
             title="Auto-Ban Setting",
             description="Would you like to enable auto-ban for servers with integrity score ≥ 50? "
-                        "If enabled, users banned from high-integrity servers will be automatically banned here."
+                        "If enabled, users banned from high-integrity servers will be automatically banned here.\n\n"
+                        "**Not Recommended**"
         )
         .set_footer(
             text="LinkBot setup | 5/5"

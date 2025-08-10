@@ -168,7 +168,7 @@ async def on_guild_join(guild):
                 ),
                 discord.Embed(
                     color=16711753,
-                    description="## Important Links\n`-` [Support Server](<https://discord.gg/UW5xba89nM>)\n`-` [Ente's Portfolio](https://entes-portfolio.fly.dev)\n",
+                    description="## Important Links\n`-` [Support Server](<https://discord.gg/8zrgFgSPfM>)\n`-` [Ente's Portfolio](https://entes-portfolio.fly.dev)\n",
                 )
                 .set_image(url="https://i.postimg.cc/RFKpH1jd/Def-Banner.png")
                 .set_footer(

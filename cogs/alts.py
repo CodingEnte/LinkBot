@@ -910,5 +910,38 @@ class Alts(commands.Cog):
         }
         return rule_names.get(rule_key, rule_key)
 
+    async def alt_settings(self, interaction):
+        """Show the alt detection settings panel (for dashboard integration)"""
+        # Check maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
+        guild_id = interaction.guild.id
+        # Fetch current settings or use defaults
+        settings = await self.get_server_settings(guild_id)
+        if not settings:
+            settings = {
+                "enabled": True,
+                "threshold": 100,
+                "rules": {
+                    "new_account": True,
+                    "no_avatar": True,
+                    "alt_name": True,
+                    "default_name": True,
+                    "previous_ban": True,
+                    "quick_join": True
+                },
+                "auto_kick": False,
+                "auto_ban": False
+            }
+        view = AltSettings(self.bot, guild_id, settings)
+        embed = discord.Embed(
+            title="Alt Detection Settings",
+            description="Configure the alt de   tection system for your server.",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
 def setup(bot):
     bot.add_cog(Alts(bot))

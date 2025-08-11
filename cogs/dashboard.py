@@ -1,10 +1,8 @@
 import json
-from typing import List, Optional
 
 import aiosqlite
 import discord
 from discord.ext import commands
-from discord.ext.bridge import bridge_command
 from ezcord.internal.dc import slash_command
 
 from cogs.systems import preChecks
@@ -152,6 +150,29 @@ class Dashboard(commands.Cog):
             inline=False
         )
 
+        # Get alt detection status
+        async with aiosqlite.connect("database.db") as db:
+            async with db.execute(
+                "SELECT settings FROM alt_settings WHERE server_id = ?",
+                (ctx.guild.id,)
+            ) as cursor:
+                alt_data = await cursor.fetchone()
+
+                if alt_data:
+                    try:
+                        alt_settings = json.loads(alt_data[0])
+                        alt_status = "Enabled" if alt_settings.get("enabled", False) else "Disabled"
+                    except (json.JSONDecodeError, TypeError):
+                        alt_status = "Disabled"
+                else:
+                    alt_status = "Disabled"
+
+        embed.add_field(
+            name="Alt Detection", 
+            value=alt_status,
+            inline=False
+        )
+
         # Show the dashboard only to the person who ran the command
         await ctx.respond(
             embed=embed,
@@ -203,10 +224,33 @@ class DashboardView(discord.ui.View):
         )
 
     @discord.ui.button(
+        label="Alt Detection Settings", 
+        style=discord.ButtonStyle.primary,
+        emoji="🔍",
+        row=2
+    )
+    async def alt_settings(self, button: discord.ui.Button, interaction: discord.Interaction):
+        """Opens the alt detection settings"""
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
+        # Get the Alts cog
+        alts_cog = self.bot.get_cog("Alts")
+        if alts_cog:
+            # Call the alt_settings command
+            await alts_cog.alt_settings(interaction)
+        else:
+            await interaction.response.send_message(
+                "Alt detection settings are not available. Please try again later.",
+                ephemeral=True
+            )
+
+    @discord.ui.button(
         label="Toggle Auto-Ban", 
         style=discord.ButtonStyle.primary, # placeholder --> Fix in __init__
         emoji="🔄",
-        row=2
+        row=3
     )
     async def toggle_auto_ban(self, button: discord.ui.Button, interaction: discord.Interaction):
         """Flips the auto-ban setting on/off and changes button color"""
@@ -256,6 +300,29 @@ class DashboardView(discord.ui.View):
         embed.add_field(
             name="Prefix", 
             value=f"`{self.preferences.get('prefix', '-')}`",
+            inline=False
+        )
+
+        # Get alt detection status
+        async with aiosqlite.connect("database.db") as db:
+            async with db.execute(
+                "SELECT settings FROM alt_settings WHERE server_id = ?",
+                (self.guild_id,)
+            ) as cursor:
+                alt_data = await cursor.fetchone()
+
+                if alt_data:
+                    try:
+                        alt_settings = json.loads(alt_data[0])
+                        alt_status = "Enabled" if alt_settings.get("enabled", False) else "Disabled"
+                    except (json.JSONDecodeError, TypeError):
+                        alt_status = "Disabled"
+                else:
+                    alt_status = "Disabled"
+
+        embed.add_field(
+            name="Alt Detection", 
+            value=alt_status,
             inline=False
         )
 
@@ -344,6 +411,29 @@ class PrefixSelect(discord.ui.Select):
         embed.add_field(
             name="Prefix", 
             value=f"`{self.preferences.get('prefix', '-')}`",
+            inline=False
+        )
+
+        # Get alt detection status
+        async with aiosqlite.connect("database.db") as db:
+            async with db.execute(
+                "SELECT settings FROM alt_settings WHERE server_id = ?",
+                (self.guild_id,)
+            ) as cursor:
+                alt_data = await cursor.fetchone()
+
+                if alt_data:
+                    try:
+                        alt_settings = json.loads(alt_data[0])
+                        alt_status = "Enabled" if alt_settings.get("enabled", False) else "Disabled"
+                    except (json.JSONDecodeError, TypeError):
+                        alt_status = "Disabled"
+                else:
+                    alt_status = "Disabled"
+
+        embed.add_field(
+            name="Alt Detection", 
+            value=alt_status,
             inline=False
         )
 

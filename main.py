@@ -9,9 +9,11 @@ import discord
 import ezcord
 from colorama import Fore, Style
 from discord.ext import commands, tasks
+from dotenv import load_dotenv
 
 intents = discord.Intents.all()
 
+load_dotenv()
 ezcord.set_log(
     log_level=logging.DEBUG,
     file=True,
@@ -86,6 +88,7 @@ bot = ezcord.BridgeBot(
     command_prefix=get_prefix,
     help_command=None,
     ready_event=None,
+    debug_guilds=[1403854281399996456, 1168510888110727189],
     ignored_errors=[commands.CommandOnCooldown, commands.MissingPermissions],
     error_webhook_url=os.getenv("d"),
     sync_commands_debug=True
@@ -194,6 +197,11 @@ async def on_guild_remove(guild):
         # Also remove any bans they issued
         await db.execute("DELETE FROM bans WHERE origin_server_id = ?", (guild.id,))
 
+        # Clean up alt detection data
+        await db.execute("DELETE FROM alt_settings WHERE server_id = ?", (guild.id,))
+        await db.execute("DELETE FROM alt_dismissed WHERE server_id = ?", (guild.id,))
+        await db.execute("DELETE FROM alt_actions WHERE server_id = ?", (guild.id,))
+
         await db.commit()
 
     # Fix our status with the new server count
@@ -279,4 +287,4 @@ if __name__ == "__main__":
     print(f"Total lines: {total_lines}")
     print(f"Total characters: {total_chars}")
 
-bot.run(os.getenv("TOKEN"))
+bot.run(os.getenv("TESTING"))

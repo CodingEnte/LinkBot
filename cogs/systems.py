@@ -51,7 +51,7 @@ NewSetupPages = {
             value="Before LinkBot can start protecting your server you will need to complete a small setup. Follow the steps to set up LinkBot."
         )
         .set_footer(
-            text="LinkBot setup | 1/5"
+            text="LinkBot setup | 1/6"
         ),
         "skippable": False,
         "type": "info"
@@ -64,7 +64,7 @@ NewSetupPages = {
                         "**Default:** `-`"
         )
         .set_footer(
-            text="LinkBot setup | 2/5"
+            text="LinkBot setup | 2/6"
         ),
         "skippable": False,
         "type": "prefix_select"
@@ -77,7 +77,7 @@ NewSetupPages = {
                         "**Example:** #alerts"
         )
         .set_footer(
-            text="LinkBot setup | 3/5"
+            text="LinkBot setup | 3/6"
         ),
         "skippable": False,
         "type": "channel_ping"
@@ -91,12 +91,25 @@ NewSetupPages = {
                         "You can skip this step if you don't want to ping any role."
         )
         .set_footer(
-            text="LinkBot setup | 4/5"
+            text="LinkBot setup | 4/6"
         ),
         "skippable": True,
         "type": "role_ping"
     },
     "Step5": {
+        "embed": discord.Embed(
+            title="Alt Detection",
+            description="Would you like to enable alt account detection? "
+                        "This feature will detect possible alt accounts when users join your server.\n\n"
+                        "You can configure detailed settings later using the dashboard."
+        )
+        .set_footer(
+            text="LinkBot setup | 5/6"
+        ),
+        "skippable": False,
+        "type": "alt_toggle"
+    },
+    "Step6": {
         "embed": discord.Embed(
             title="Auto-Ban Setting",
             description="Would you like to enable auto-ban for servers with integrity score ≥ 50? "
@@ -104,7 +117,7 @@ NewSetupPages = {
                         "**Not Recommended**"
         )
         .set_footer(
-            text="LinkBot setup | 5/5"
+            text="LinkBot setup | 6/6"
         ),
         "skippable": False,
         "type": "toggle"
@@ -303,7 +316,7 @@ class Systems(commands.Cog):
                 # Acknowledge the role selection
                 await message.reply(f"Role {role.mention} will be pinged for ban alerts. Click the button to continue.")
 
-    @command(name="help", description="Shows help menu with features and commands")
+    @bridge_command(name="help", description="Shows help menu with features and commands")
     @commands.guild_only()
     async def help(self, ctx):
         """Show the help menu with all available commands and features"""
@@ -350,7 +363,7 @@ class Systems(commands.Cog):
         # Show the help menu but delete it after 30 seconds
         await ctx.send(embed=embed, delete_after=30)
 
-    @command(name="ping", description="Shows bot latency")
+    @bridge_command(name="ping", description="Shows bot latency")
     async def ping(self, ctx):
         """Check if the bot is responsive and how fast it is"""
         # Make sure we're not in maintenance mode
@@ -369,7 +382,7 @@ class Systems(commands.Cog):
         # Show ping result briefly
         await ctx.send(embed=embed, delete_after=15)
 
-    @command(name="prefix", description="Shows or sets custom prefix")
+    @bridge_command(name="prefix", description="Shows or sets custom prefix")
     @commands.guild_only()
     async def prefix(self, ctx, new_prefix: str = None):
         """View or change the command prefix for this server"""
@@ -602,6 +615,10 @@ class NewSetupView(discord.ui.View):
             # Some steps can be skipped
             if skipable:
                 self.add_item(SkipButton(self.cog, self.guild_id, self.step))
+        elif step_type == "alt_toggle":
+            self.add_item(EnableAltButton(self.cog, self.guild_id))
+            self.add_item(DisableAltButton(self.cog, self.guild_id))
+            self.add_item(DefaultAltButton(self.cog, self.guild_id))
         elif step_type == "toggle":
             self.add_item(EnableButton(self.cog, self.guild_id))
             self.add_item(DisableButton(self.cog, self.guild_id))
@@ -713,10 +730,36 @@ class NewSetupView(discord.ui.View):
 
         # Store everything in the database
         async with aiosqlite.connect("database.db") as db:
+            # Save server preferences
             await db.execute(
                 "INSERT OR REPLACE INTO servers (server_id, preferences, integrity, blacklisted) VALUES (?, ?, 100, 0)",
                 (self.guild_id, json.dumps(preferences))
             )
+
+            # Save alt detection settings if they were set
+            if "alt_settings" in setup_data:
+                alt_settings = setup_data["alt_settings"]
+
+                # Check if alt settings already exist for this server
+                async with db.execute(
+                    "SELECT settings FROM alt_settings WHERE server_id = ?",
+                    (self.guild_id,)
+                ) as cursor:
+                    existing = await cursor.fetchone()
+
+                if existing:
+                    # Update existing settings
+                    await db.execute(
+                        "UPDATE alt_settings SET settings = ? WHERE server_id = ?",
+                        (json.dumps(alt_settings), self.guild_id)
+                    )
+                else:
+                    # Insert new settings
+                    await db.execute(
+                        "INSERT INTO alt_settings (server_id, settings) VALUES (?, ?)",
+                        (self.guild_id, json.dumps(alt_settings))
+                    )
+
             await db.commit()
 
         # Create a nice completion message
@@ -750,6 +793,16 @@ class NewSetupView(discord.ui.View):
             value=f"`{preferences['prefix']}`",
             inline=False
         )
+
+        # Add alt detection status if it was set
+        if "alt_settings" in setup_data:
+            alt_settings = setup_data["alt_settings"]
+            alt_status = "Enabled" if alt_settings.get("enabled", False) else "Disabled"
+            embed.add_field(
+                name="Alt Detection", 
+                value=alt_status,
+                inline=False
+            )
 
         embed.set_footer(text="Use /dashboard to update your settings in the future.")
 
@@ -998,6 +1051,163 @@ class DisableButton(discord.ui.Button):
         await parent_view.advance_step(interaction)
 
 
+class EnableAltButton(discord.ui.Button):
+    def __init__(self, cog, guild_id: int):
+        self.cog = cog
+        self.guild_id = guild_id
+
+        super().__init__(
+            label="Enable Alt Detection",
+            style=discord.ButtonStyle.success,
+            custom_id="enable_alt_detection"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.followup.send(
+                "Only the user who started the setup can enable alt detection.",
+                ephemeral=True
+            )
+            return
+
+        # Initialize alt_settings if not already in setup_data
+        if "alt_settings" not in self.cog.setup_data[self.guild_id]:
+            self.cog.setup_data[self.guild_id]["alt_settings"] = {}
+
+        # Save alt detection setting - enabled with default settings
+        self.cog.setup_data[self.guild_id]["alt_settings"] = {
+            "enabled": True,
+            "threshold": 100,
+            "rules": {
+                "new_account": True,
+                "no_avatar": True,
+                "alt_name": True,
+                "default_name": True,
+                "previous_ban": True,
+                "quick_join": True
+            },
+            "auto_kick": False,
+            "auto_ban": False
+        }
+
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
+
+        # Get parent view and advance to next step
+        parent_view = self.view
+        await parent_view.advance_step(interaction)
+
+
+class DisableAltButton(discord.ui.Button):
+    def __init__(self, cog, guild_id: int):
+        self.cog = cog
+        self.guild_id = guild_id
+
+        super().__init__(
+            label="Disable Alt Detection",
+            style=discord.ButtonStyle.danger,
+            custom_id="disable_alt_detection"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.followup.send(
+                "Only the user who started the setup can disable alt detection.",
+                ephemeral=True
+            )
+            return
+
+        # Initialize alt_settings if not already in setup_data
+        if "alt_settings" not in self.cog.setup_data[self.guild_id]:
+            self.cog.setup_data[self.guild_id]["alt_settings"] = {}
+
+        # Save alt detection setting - disabled
+        self.cog.setup_data[self.guild_id]["alt_settings"] = {
+            "enabled": False
+        }
+
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
+
+        # Get parent view and advance to next step
+        parent_view = self.view
+        await parent_view.advance_step(interaction)
+
+
+class DefaultAltButton(discord.ui.Button):
+    def __init__(self, cog, guild_id: int):
+        self.cog = cog
+        self.guild_id = guild_id
+
+        super().__init__(
+            label="Use Default Settings",
+            style=discord.ButtonStyle.primary,
+            custom_id="default_alt_settings"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Defer the response to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if we're in maintenance mode
+        check = await preChecks(interaction)
+        if check is True:
+            return
+
+        # Check if the interaction is from the user who started the setup
+        if interaction.user.id != self.cog.setup_owners.get(self.guild_id):
+            await interaction.followup.send(
+                "Only the user who started the setup can select default settings.",
+                ephemeral=True
+            )
+            return
+
+        # Initialize alt_settings if not already in setup_data
+        if "alt_settings" not in self.cog.setup_data[self.guild_id]:
+            self.cog.setup_data[self.guild_id]["alt_settings"] = {}
+
+        # Save alt detection setting - enabled with default settings
+        self.cog.setup_data[self.guild_id]["alt_settings"] = {
+            "enabled": True,
+            "threshold": 100,
+            "rules": {
+                "new_account": True,
+                "no_avatar": True,
+                "alt_name": True,
+                "default_name": True,
+                "previous_ban": True,
+                "quick_join": True
+            },
+            "auto_kick": False,
+            "auto_ban": False
+        }
+
+        # Store the message reference for timeout handling
+        self.view.message = interaction.message
+
+        # Get parent view and advance to next step
+        parent_view = self.view
+        await parent_view.advance_step(interaction)
+
+
 class ChannelPingButton(discord.ui.Button):
     """Button that waits for a channel ping"""
 
@@ -1110,7 +1320,6 @@ class PrefixSelect(discord.ui.Select):
                 label=prefix,
                 value=prefix,
                 description=f"Set {prefix} as the command prefix",
-                default=(prefix == "-")  # Default to "-"
             )
             for prefix in prefixes
         ]

@@ -88,7 +88,6 @@ bot = ezcord.BridgeBot(
     command_prefix=get_prefix,
     help_command=None,
     ready_event=None,
-    debug_guilds=[1403854281399996456, 1168510888110727189],
     ignored_errors=[commands.CommandOnCooldown, commands.MissingPermissions],
     error_webhook_url=os.getenv("d"),
     sync_commands_debug=True
@@ -287,4 +286,4 @@ if __name__ == "__main__":
     print(f"Total lines: {total_lines}")
     print(f"Total characters: {total_chars}")
 
-bot.run(os.getenv("TESTING"))
+bot.run(os.getenv("TOKEN"))

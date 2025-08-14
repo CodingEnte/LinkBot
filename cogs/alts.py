@@ -719,7 +719,7 @@ class Alts(commands.Cog):
                 # Add user info
                 embed.add_field(
                     name="User Info",
-                    value=f"**ID:** {member.id}\n**Created:** {member.created_at.strftime('%Y-%m-%d %H:%M:%S')} ({(datetime.now() - member.created_at).days} days ago)",
+                    value=f"**ID:** {member.id}\n**Created:** {member.created_at.strftime('%Y-%m-%d %H:%M:%S')} ({(datetime.now(timezone.utc) - member.created_at).days} days ago)",
                     inline=False
                 )
 
@@ -754,7 +754,7 @@ class Alts(commands.Cog):
                 # Add user info
                 embed.add_field(
                     name="User Info",
-                    value=f"**ID:** {member.id}\n**Created:** {member.created_at.strftime('%Y-%m-%d %H:%M:%S')} ({(datetime.now() - member.created_at).days} days ago)",
+                    value=f"**ID:** {member.id}\n**Created:** {member.created_at.strftime('%Y-%m-%d %H:%M:%S')} ({(datetime.now(timezone.utc) - member.created_at).days} days ago)",
                     inline=False
                 )
 
@@ -784,7 +784,7 @@ class Alts(commands.Cog):
         # Add user info
         embed.add_field(
             name="User Info",
-            value=f"**ID:** {member.id}\n**Created:** {member.created_at.strftime('%Y-%m-%d %H:%M:%S')} ({(datetime.now() - member.created_at).days} days ago)",
+            value=f"**ID:** {member.id}\n**Created:** {member.created_at.strftime('%Y-%m-%d %H:%M:%S')} ({(datetime.now(timezone.utc) - member.created_at).days} days ago)",
             inline=False
         )
 
@@ -938,10 +938,7 @@ class Alts(commands.Cog):
         view = AltSettings(self.bot, guild_id, settings)
         embed = discord.Embed(
             title="Alt Detection Settings",
-            description="Configure the alt de   tection system for your server.",
+            description="Configure the alt detection system for your server.",
             color=discord.Color.blue()
         )
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-def setup(bot):
-    bot.add_cog(Alts(bot))

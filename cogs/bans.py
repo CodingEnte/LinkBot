@@ -362,7 +362,14 @@ class Bans(commands.Cog):
         # Send the alert, pinging the role if specified
         ping_role_id = preferences.get("ping_role_id")
         content = f"<@&{ping_role_id}>" if ping_role_id else None
-        await alert_channel.send(content=content, embed=embed, view=view)
+        try:
+            await alert_channel.send(content=content, embed=embed, view=view)
+        except discord.errors.Forbidden:
+            # Bot doesn't have permission to send messages in this channel
+            print(f"Missing permissions to send join alert in channel {alert_channel.id} in guild {member.guild.id}")
+        except Exception as e:
+            # Log any other errors that might occur
+            print(f"Error sending join alert: {e}")
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -589,7 +596,14 @@ class Bans(commands.Cog):
                             await db.commit()
 
                         # Send notification to alert channel
-                        await alert_channel.send(embed=embed)
+                        try:
+                            await alert_channel.send(embed=embed)
+                        except discord.errors.Forbidden:
+                            # Bot doesn't have permission to send messages in this channel
+                            print(f"Missing permissions to send auto-ban notification in channel {alert_channel.id} in guild {guild.id}")
+                        except Exception as e:
+                            # Log any other errors that might occur
+                            print(f"Error sending auto-ban notification: {e}")
 
                     except (discord.Forbidden, discord.HTTPException):
                         # If auto-ban fails, fall back to sending an alert
@@ -619,7 +633,14 @@ class Bans(commands.Cog):
 
         # Send the alert, pinging the role if specified
         content = f"<@&{ping_role_id}>" if ping_role_id else None
-        await channel.send(content=content, embed=embed, view=view)
+        try:
+            await channel.send(content=content, embed=embed, view=view)
+        except discord.errors.Forbidden:
+            # Bot doesn't have permission to send messages in this channel
+            print(f"Missing permissions to send ban alert in channel {channel.id} in guild {channel.guild.id}")
+        except Exception as e:
+            # Log any other errors that might occur
+            print(f"Error sending ban alert: {e}")
 
     @tasks.loop(minutes=10)
     async def check_expired_views(self):

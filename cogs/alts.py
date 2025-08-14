@@ -942,3 +942,7 @@ class Alts(commands.Cog):
             color=discord.Color.blue()
         )
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+def setup(bot):
+    bot.add_cog(Alts(bot))

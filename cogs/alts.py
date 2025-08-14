@@ -22,7 +22,7 @@ class AltDetectionView(discord.ui.View):
         self.cog = cog
         self.expiry_time = datetime.now(timezone.utc) + timedelta(hours=24)
 
-    @discord.ui.button(label="Kick", style=discord.ButtonStyle.primary, emoji="👢", custom_id="kick_user")
+    @discord.ui.button(label="Kick", style=discord.ButtonStyle.primary, custom_id="kick_user")
     async def kick_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         # Defer the response to prevent timeouts
         await interaction.response.defer(ephemeral=True)
@@ -56,7 +56,7 @@ class AltDetectionView(discord.ui.View):
 
         # Update the message
         embed = interaction.message.embeds[0]
-        embed.add_field(name="Status", value=f"👢 Kicked by {interaction.user.mention}", inline=False)
+        embed.add_field(name="Status", value=f"`✅` Kicked by {interaction.user.mention}", inline=False)
 
         await interaction.edit_original_response(embed=embed, view=self)
         await interaction.followup.send(success_msg, ephemeral=True)
@@ -64,7 +64,7 @@ class AltDetectionView(discord.ui.View):
         # Log the action in the database
         await self.cog.log_alt_action(interaction.guild.id, self.user_id, "kicked", interaction.user.id)
 
-    @discord.ui.button(label="Ban", style=discord.ButtonStyle.danger, emoji="🔨", custom_id="ban_user")
+    @discord.ui.button(label="Ban", style=discord.ButtonStyle.danger, custom_id="ban_user")
     async def ban_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         # Defer the response to prevent timeouts
         await interaction.response.defer(ephemeral=True)
@@ -97,7 +97,7 @@ class AltDetectionView(discord.ui.View):
 
         # Update the message
         embed = interaction.message.embeds[0]
-        embed.add_field(name="Status", value=f"🔨 Banned by {interaction.user.mention}", inline=False)
+        embed.add_field(name="Status", value=f"`✅` Banned by {interaction.user.mention}", inline=False)
 
         await interaction.edit_original_response(embed=embed, view=self)
         await interaction.followup.send(success_msg, ephemeral=True)
@@ -105,7 +105,7 @@ class AltDetectionView(discord.ui.View):
         # Log the action in the database
         await self.cog.log_alt_action(interaction.guild.id, self.user_id, "banned", interaction.user.id)
 
-    @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.success, emoji="✓", custom_id="dismiss_alt_alert")
+    @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.success, custom_id="dismiss_alt_alert")
     async def dismiss_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         # Defer the response to prevent timeouts
         await interaction.response.defer(ephemeral=True)
@@ -126,7 +126,7 @@ class AltDetectionView(discord.ui.View):
 
         # Update the message
         embed = interaction.message.embeds[0]
-        embed.add_field(name="Status", value=f"✓ Dismissed by {interaction.user.mention}", inline=False)
+        embed.add_field(name="Status", value=f"`✅` Dismissed by {interaction.user.mention}", inline=False)
 
         await interaction.edit_original_response(embed=embed, view=self)
         await interaction.followup.send("Alert dismissed. No action taken against the user.", ephemeral=True)
@@ -942,3 +942,7 @@ class Alts(commands.Cog):
             color=discord.Color.blue()
         )
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+def setup(bot):
+    bot.add_cog(Alts(bot))
